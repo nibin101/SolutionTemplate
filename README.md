@@ -1,17 +1,17 @@
-# [Project Name]
+# Picturesque  
 
 ### **DSOLVE 2026** · DRISHTI · College of Engineering Trivandrum (CET)
 
 **BUILD. SOLVE. DEMONSTRATE.**
 
-|                   |                                           |
-| ----------------- | ----------------------------------------- |
-| **Problem:**      | Problem N — [Problem Title]               |
-| **Team Name:**    | [Your Team Name]                          |
-| **Team Members:** | [Name 1] · [Name 2] · [Name 3] · [Name 4] |
-| **Institution:**  | [College / University]                    |
-| **Live Demo:**    | [Demo link goes here]                     |
-| **Pitch Video:**  | [Social media pitch video link]           |
+|                   |                                                     |
+| ----------------- | --------------------------------------------------- | 
+| **Problem:**      | Problem 4 — Automated Camera Workflow               | 
+| **Team Name:**    | CJD                                                 |
+| **Team Members:** | Ajo Jose · Woitiwe Simpson · Alan Joy · Nibin Thomas|
+| **Institution:**  | CET                                                 |
+| **Live Demo:**    | [Demo link goes here]                               |
+| **Pitch Video:**  | [Social media pitch video link]                     |
 
 ---
 
@@ -30,17 +30,14 @@
 
 ---
 
-> **READ THIS FIRST:** This repository is a **starting template**.
-
----
-
 ## Problem Statement
 
-> _Copy the official problem statement you chose (from `docs/problem-statements.md`)._
->
-> ## Problem N: [Title]
->
-> [Paste the full official problem text here]
+## Problem 4: Automated Camera Workflow
+Develop an automated camera workflow that enables clinical teams to capture and transfer patient images directly from professional cameras into a dental software application.
+
+Currently, clinical teams may need to manually capture, transfer, organise, and upload patient images, and workflows can vary across camera brands.
+
+The solution should support commonly used professional DSLR cameras such as Canon, Nikon, and Sony, and enable seamless streaming or transfer of patient images directly into the application, reducing manual steps and improving the clinical photography workflow.
 
 ### Why this matters
 
