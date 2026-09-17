@@ -16,14 +16,21 @@ Thumbs.db
 credentials.json
 
 # ------------------------------------------------------------------
-# Stack-specific rules
-# After your team picks a stack, add ignore rules for it below.
-# Examples to uncomment/adjust for common cases:
-#   # Node / JS / TS        ->  node_modules/, dist/, build/, coverage/
-#   # Python                ->  __pycache__/, .venv/, venv/
-#   # Java / JVM            ->  target/, .gradle/, *.class
-#   # Flutter / Dart        ->  .dart_tool/, build/, .packages
+# Python
 # ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# ------------------------------------------------------------------
+# Runtime data — patient images, queues and logs never belong in git
+# ------------------------------------------------------------------
+backend/data/
+bridge/spool/
+bridge/logs/
+bridge/watch/
 
 # ------------------------------------------------------------------
 # Editors / IDEs

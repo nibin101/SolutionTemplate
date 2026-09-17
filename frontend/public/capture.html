@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f7b6c" />
+    <title>SnapChart - phone capture</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./capture.css" />
+  </head>
+  <body class="phone">
+    <header class="phone-bar">
+      <div>
+        <h1>SnapChart</h1>
+        <p id="link-state">Connecting...</p>
+      </div>
+      <label class="phone-op">
+        Room
+        <select id="operatory">
+          <option>OP-1</option>
+          <option>OP-2</option>
+          <option>OP-3</option>
+        </select>
+      </label>
+    </header>
+
+    <main class="phone-main">
+      <section id="target" class="target">
+        <span class="target-label">Sending to</span>
+        <strong id="target-name">Checking...</strong>
+        <span id="target-note" class="target-note"></span>
+      </section>
+
+      <label class="target-override">
+        Send to a specific patient
+        <select id="patient-override">
+          <option value="">Whoever is in the chair (follow the room)</option>
+        </select>
+      </label>
+
+      <div class="shutter-row">
+        <label class="shutter" for="take-photo">
+          <span class="shutter-ring" aria-hidden="true"></span>
+          Take photo
+        </label>
+        <label class="btn btn-ghost pick" for="pick-photos">Choose from gallery</label>
+      </div>
+
+      <input id="take-photo" type="file" accept="image/*" capture="environment" hidden />
+      <input id="pick-photos" type="file" accept="image/*" multiple hidden />
+
+      <section class="sent">
+        <h2>This session</h2>
+        <ul id="sent-list" class="sent-list"></ul>
+        <p id="sent-empty" class="empty">Nothing sent yet. Take a photo to start.</p>
+      </section>
+    </main>
+
+    <script src="./capture.js"></script>
+  </body>
+</html>

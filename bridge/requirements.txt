@@ -1,0 +1,18 @@
+# Camera bridge - background capture service (Python 3.12, Windows)
+requests==2.32.3
+watchdog==6.0.0
+python-dotenv==1.0.1
+Pillow==11.1.0
+
+# Windows camera access.
+# comtypes  -> Windows Portable Devices (MTP/PTP) COM API, used for USB tethering
+#              to Canon / Nikon / Sony bodies without any vendor SDK.
+# pywin32   -> Shell fallback for MTP devices, and autostart shortcut creation.
+comtypes==1.4.8; sys_platform == "win32"
+pywin32==308; sys_platform == "win32"
+
+# Background tray UI
+pystray==0.19.5
+
+# Dev / test only
+pytest==8.3.4

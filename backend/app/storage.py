@@ -1,0 +1,251 @@
+"""Image storage on disk, plus EXIF and thumbnail extraction.
+
+Layout
+------
+One folder per person, named after them, filed where a human can find it
+without the application:
+
+    data/photos/Aarav_Menon_CS-1001/2026-09-18/IMG_0001.JPG
+    data/photos/_unassigned/2026-09-18/IMG_0007.JPG
+    data/thumbnails/a3/<sha256>.jpg
+
+The name comes first because that is what someone scrolling a folder list is
+looking for. The chart number stays on the end because two patients really can
+share a name, and a photograph in the wrong person's folder is the one failure
+this whole system exists to prevent.
+
+A practice that has to hand records to a specialist, or that loses the software
+entirely, still has an organised folder of clinical photographs. That is worth
+more than the tidiness of a content-addressed blob store.
+
+Deduplication does not depend on the path: the SHA-256 of the file bytes is
+stored in the database with a unique index, and the caller checks it before
+storing. Thumbnails stay content-addressed and out of the way, so the photo
+folders contain only real photographs.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import re
+import shutil
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+from PIL import Image, ImageOps
+
+from .config import settings
+
+THUMB_MAX_EDGE = 480
+
+#: Where captures live until a human attaches them to a patient.
+UNASSIGNED_FOLDER = "_unassigned"
+
+# EXIF tag numbers we care about (see Exif 2.3 spec).
+_TAG_MAKE = 0x010F
+_TAG_MODEL = 0x0110
+_TAG_EXIF_IFD = 0x8769
+_TAG_DATETIME_ORIGINAL = 0x9003
+
+_EXTENSION_BY_MIME = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/tiff": ".tif",
+    "image/heic": ".heic",
+}
+
+# Windows rejects these outright; the rest is trimmed to keep folder names sane.
+_UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+@dataclass
+class StoredImage:
+    content_hash: str
+    stored_path: Path
+    thumb_path: Path | None
+    mime: str
+    size_bytes: int
+    width: int | None
+    height: int | None
+    camera_make: str | None
+    camera_model: str | None
+    captured_at: str | None
+
+
+def sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+# --------------------------------------------------------------------------
+# Folder naming
+# --------------------------------------------------------------------------
+
+
+def safe_component(value: str, fallback: str = "unnamed") -> str:
+    cleaned = _UNSAFE.sub("", value).strip().strip(".")
+    cleaned = re.sub(r"\s+", "_", cleaned)
+    return cleaned[:60] or fallback
+
+
+def patient_folder(chart_number: str, first_name: str, last_name: str) -> str:
+    """The person's name, with their chart number to keep it unique."""
+    return safe_component(f"{first_name}_{last_name}_{chart_number}", "patient")
+
+
+def date_folder(captured_at: str | None) -> str:
+    """One folder per day of capture - the unit a clinician actually thinks in."""
+    if captured_at:
+        try:
+            moment = datetime.fromisoformat(captured_at)
+        except ValueError:
+            moment = datetime.now(timezone.utc)
+    else:
+        moment = datetime.now(timezone.utc)
+    return moment.date().isoformat()
+
+
+def folder_for(patient: dict | None, captured_at: str | None) -> str:
+    """Relative folder a capture belongs in, given who it is for (if anyone)."""
+    if patient is None:
+        return f"{UNASSIGNED_FOLDER}/{date_folder(captured_at)}"
+    name = patient_folder(
+        patient["chart_number"], patient["first_name"], patient["last_name"]
+    )
+    return f"{name}/{date_folder(captured_at)}"
+
+
+def _unique_path(directory: Path, filename: str) -> Path:
+    """Never overwrite: two different photos may share a camera file name."""
+    stem, suffix = Path(filename).stem, Path(filename).suffix
+    candidate = directory / filename
+    counter = 2
+    while candidate.exists():
+        candidate = directory / f"{stem}_{counter}{suffix}"
+        counter += 1
+    return candidate
+
+
+# --------------------------------------------------------------------------
+# Metadata
+# --------------------------------------------------------------------------
+
+
+def _exif_datetime_to_iso(raw: str) -> str | None:
+    """EXIF stores local time as 'YYYY:MM:DD HH:MM:SS' with no zone.
+
+    Cameras rarely know their timezone, so we read it as local clock time and
+    normalise to UTC using the machine's offset - the same assumption the
+    clinician makes when they look at the camera's own clock.
+    """
+    try:
+        naive = datetime.strptime(raw.strip(), "%Y:%m:%d %H:%M:%S")
+    except (ValueError, AttributeError):
+        return None
+    return naive.astimezone().astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _read_metadata(image: Image.Image) -> tuple[str | None, str | None, str | None]:
+    try:
+        exif = image.getexif()
+    except Exception:
+        return None, None, None
+    if not exif:
+        return None, None, None
+
+    make = exif.get(_TAG_MAKE)
+    model = exif.get(_TAG_MODEL)
+    captured = None
+    try:
+        sub_ifd = exif.get_ifd(_TAG_EXIF_IFD)
+        if sub_ifd:
+            captured = _exif_datetime_to_iso(sub_ifd.get(_TAG_DATETIME_ORIGINAL, ""))
+    except Exception:
+        captured = None
+
+    def clean(value):
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    return clean(make), clean(model), captured
+
+
+# --------------------------------------------------------------------------
+# Writing and moving
+# --------------------------------------------------------------------------
+
+
+def store_image(data: bytes, filename: str, mime: str, folder: str) -> StoredImage:
+    """Write bytes into `folder` and derive a thumbnail plus camera metadata."""
+    content_hash = sha256_hex(data)
+    suffix = _EXTENSION_BY_MIME.get(mime) or (Path(filename).suffix.lower() or ".jpg")
+    safe_name = safe_component(Path(filename).stem, content_hash[:12]) + suffix
+
+    directory = settings.image_dir / folder
+    directory.mkdir(parents=True, exist_ok=True)
+    stored_path = _unique_path(directory, safe_name)
+    stored_path.write_bytes(data)
+
+    width = height = None
+    make = model = captured_at = None
+    thumb_path: Path | None = None
+
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            width, height = image.size
+            make, model, captured_at = _read_metadata(image)
+
+            thumb_shard = settings.thumb_dir / content_hash[:2]
+            thumb_shard.mkdir(parents=True, exist_ok=True)
+            candidate = thumb_shard / f"{content_hash}.jpg"
+            if not candidate.exists():
+                thumb = ImageOps.exif_transpose(image)
+                thumb.thumbnail((THUMB_MAX_EDGE, THUMB_MAX_EDGE))
+                thumb.convert("RGB").save(candidate, "JPEG", quality=82)
+            thumb_path = candidate
+    except Exception:
+        # A RAW/unsupported file still gets stored and charted; it just has no
+        # preview. Losing the clinical image would be far worse than losing a
+        # thumbnail, so this failure is intentionally swallowed.
+        thumb_path = None
+
+    return StoredImage(
+        content_hash=content_hash,
+        stored_path=stored_path,
+        thumb_path=thumb_path,
+        mime=mime,
+        size_bytes=len(data),
+        width=width,
+        height=height,
+        camera_make=make,
+        camera_model=model,
+        captured_at=captured_at,
+    )
+
+
+def move_image(current: Path, folder: str) -> Path:
+    """Re-file a photograph when it is assigned to (or moved between) patients.
+
+    Returns the new path, or the old one if the move fails - a database row
+    pointing at a file that is still where it was beats one pointing nowhere.
+    """
+    if not current.exists():
+        return current
+
+    directory = settings.image_dir / folder
+    directory.mkdir(parents=True, exist_ok=True)
+    if current.parent == directory:
+        return current
+
+    destination = _unique_path(directory, current.name)
+    try:
+        shutil.move(str(current), str(destination))
+    except OSError:
+        return current
+
+    # Leave the tree tidy: an emptied day folder is noise in a file listing.
+    try:
+        current.parent.rmdir()
+    except OSError:
+        pass
+    return destination

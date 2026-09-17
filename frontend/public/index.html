@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SnapChart - chair-side capture</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>SnapChart</h1>
+          <p>Camera to chart, automatically</p>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <label class="operatory">
+          Operatory
+          <select id="operatory">
+            <option>OP-1</option>
+            <option>OP-2</option>
+            <option>OP-3</option>
+          </select>
+        </label>
+        <a class="btn btn-ghost btn-small" href="./capture.html" target="_blank"
+           title="Open this on a phone to send photos straight into the chart">
+          Phone capture
+        </a>
+        <div class="bridge-status" id="bridge-status" title="Camera bridge status">
+          <span class="dot" id="bridge-dot"></span>
+          <span id="bridge-text">Checking camera link...</span>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel patients">
+        <div class="panel-head">
+          <h2>Patients</h2>
+          <button id="show-add-patient" class="btn btn-small">Add patient</button>
+        </div>
+
+        <form id="add-patient" class="add-patient" hidden>
+          <input name="chart_number" placeholder="Chart no. (e.g. CS-1005)" required />
+          <input name="first_name" placeholder="First name" required />
+          <input name="last_name" placeholder="Last name" required />
+          <input name="date_of_birth" type="date" placeholder="Date of birth" />
+          <div class="add-patient-actions">
+            <button type="submit" class="btn btn-small">Save</button>
+            <button type="button" id="cancel-add-patient" class="btn btn-small btn-ghost">
+              Cancel
+            </button>
+          </div>
+          <p id="add-patient-error" class="form-error" hidden></p>
+        </form>
+
+        <input id="patient-search" type="search" placeholder="Search name or chart no." />
+        <ul id="patient-list" class="patient-list"></ul>
+      </section>
+
+      <section class="panel capture">
+        <div class="panel-head">
+          <h2 id="capture-title">Live capture</h2>
+          <div class="panel-actions">
+            <button id="back-to-live" class="btn btn-ghost btn-small" hidden>
+              Back to live capture
+            </button>
+            <button id="end-session" class="btn btn-ghost btn-small" hidden>End session</button>
+          </div>
+        </div>
+
+        <div id="session-banner" class="session-banner idle">
+          <strong>No capture session open.</strong>
+          <span>Pick a patient to start one - photos taken before that are held for review.</span>
+        </div>
+
+        <div id="chart-banner" class="session-banner chart" hidden></div>
+
+        <div id="capture-grid" class="grid"></div>
+        <p id="capture-empty" class="empty">
+          Nothing captured yet in this session. Take a photo - it appears here on its own.
+        </p>
+      </section>
+
+      <section class="panel review">
+        <div class="panel-head">
+          <h2>
+            Needs assignment
+            <span id="unassigned-count" class="badge">0</span>
+          </h2>
+        </div>
+        <p class="hint">
+          Photos that arrived while no session was open. They are never guessed onto a chart.
+        </p>
+        <div id="unassigned-grid" class="grid small"></div>
+        <p id="unassigned-empty" class="empty">Nothing waiting. Every capture is charted.</p>
+      </section>
+    </main>
+
+    <div id="lightbox" class="lightbox" hidden>
+      <button class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
+      <img id="lightbox-image" alt="Captured clinical photograph" />
+      <p id="lightbox-caption"></p>
+    </div>
+
+    <template id="assign-template">
+      <div class="assign">
+        <select class="assign-select"></select>
+        <button class="btn btn-small assign-button">Assign</button>
+      </div>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

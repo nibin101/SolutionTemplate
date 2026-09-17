@@ -1,0 +1,499 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --ink: #16202a;
+  --muted: #61707e;
+  --line: #dfe5ea;
+  --accent: #0f7b6c;
+  --accent-soft: #e6f3f0;
+  --warn: #b06a10;
+  --warn-soft: #fdf1dd;
+  --danger: #c0392b;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 32, 42, 0.06), 0 8px 24px rgba(16, 32, 42, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11161b;
+    --panel: #181f26;
+    --ink: #e8eef3;
+    --muted: #9aa8b4;
+    --line: #27313a;
+    --accent: #3ec4ab;
+    --accent-soft: #14312c;
+    --warn: #e0a54a;
+    --warn-soft: #342913;
+    --shadow: none;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+/* ---------- top bar ---------- */
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: -0.2px;
+}
+
+.brand p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: inset 0 0 0 7px var(--panel), inset 0 0 0 9px var(--accent);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.operatory {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+select,
+input[type="search"] {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.bridge-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.dot.online {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.dot.busy {
+  background: var(--warn);
+}
+
+.dot.offline {
+  background: var(--danger);
+}
+
+/* ---------- layout ---------- */
+
+main {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr) 320px;
+  gap: 18px;
+  padding: 18px 24px 40px;
+  align-items: start;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.hint {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.badge {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ---------- patients ---------- */
+
+.patient-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 62vh;
+  overflow-y: auto;
+}
+
+.patient-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.patient-list li:hover {
+  background: var(--bg);
+}
+
+.patient-list li.active {
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent);
+}
+
+.patient-list li.viewing {
+  outline: 1px dashed var(--muted);
+}
+
+.patient-label {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.patient-actions {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+/* ---------- add patient ---------- */
+
+.add-patient {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.add-patient input {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.add-patient-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.form-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+#patient-search {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.patient-name {
+  font-weight: 600;
+}
+
+.patient-chart {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---------- session banner ---------- */
+
+.session-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+  background: var(--bg);
+  border: 1px dashed var(--line);
+}
+
+.session-banner span {
+  color: var(--muted);
+}
+
+.session-banner.live {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+}
+
+.session-banner.live span {
+  color: inherit;
+}
+
+.session-banner.chart {
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.session-banner.chart code {
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--bg);
+}
+
+.session-banner.chart .btn {
+  margin-top: 8px;
+}
+
+.chart-status {
+  font-size: 12.5px;
+  color: var(--accent) !important;
+}
+
+.chart-status.error {
+  color: var(--danger) !important;
+}
+
+/* ---------- grids ---------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.grid.small {
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+}
+
+.tile {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg);
+  animation: pop 320ms ease-out;
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile {
+    animation: none;
+  }
+}
+
+.tile img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  cursor: zoom-in;
+  background: #0c1013;
+}
+
+.tile-meta {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tile-meta strong {
+  display: block;
+  color: var(--ink);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  margin: 14px 2px 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---------- assignment ---------- */
+
+.assign {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+
+.assign select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 5px 6px;
+}
+
+.btn {
+  padding: 7px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-small {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.btn:hover {
+  filter: brightness(1.06);
+}
+
+/* ---------- lightbox ---------- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  background: rgba(7, 11, 14, 0.88);
+  z-index: 20;
+}
+
+.lightbox[hidden] {
+  display: none;
+}
+
+.lightbox img {
+  max-width: min(1100px, 92vw);
+  max-height: 80vh;
+  border-radius: 10px;
+}
+
+.lightbox p {
+  margin: 0;
+  color: #cfd8de;
+  font-size: 13px;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (max-width: 1080px) {
+  main {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-list {
+    max-height: 260px;
+  }
+}
