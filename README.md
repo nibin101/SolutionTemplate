@@ -1,4 +1,4 @@
-# Picturesque  
+# Camera Jamera Damera
 
 ### **DSOLVE 2026** · DRISHTI · College of Engineering Trivandrum (CET)
 
