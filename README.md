@@ -10,7 +10,7 @@
 | **Team Name:**    | CJD                                                 |
 | **Team Members:** | Ajo Jose · Woitiwe Simson · Alan Joy · Nibin Thomas|
 | **Institution:**  | CET                                                 |
-| **Live Demo:**    | [Demo link goes here]                               |
+| **Live Demo:**    | [Demo link goes here will add]                      |
 | **Pitch Video:**  | [Social media pitch video link]                     |
 
 ---
