@@ -17,11 +17,13 @@ const state = {
   session: null,
   captures: [],
   unassigned: [],
-  // "live" follows the open capture session; "chart" shows one patient's record.
+  // "live" follows the open capture session; "chart" shows one patient's
+  // record; "recent" shows everything charted lately, whoever it belongs to.
   view: "live",
   chartPatient: null,
   chartImages: [],
   chartFolder: null,
+  recentImages: [],
 };
 
 const el = (id) => document.getElementById(id);
@@ -67,22 +69,48 @@ function cameraOf(image) {
   return [image.camera_make, image.camera_model].filter(Boolean).join(" ") || image.source;
 }
 
-function tile(image, { assignable = false, withDate = false } = {}) {
+function patientNameFor(image) {
+  if (!image.patient_id) return null;
+  const match = state.patients.find((p) => p.id === image.patient_id);
+  return match ? match.display_name : null;
+}
+
+function tile(image, { assignable = false, withDate = false, withPatient = false } = {}) {
   const node = document.createElement("figure");
   node.className = "tile";
   node.dataset.id = image.id;
 
-  const img = document.createElement("img");
-  img.src = image.thumb_url || image.file_url;
-  img.alt = `Capture ${image.filename}`;
-  img.loading = "lazy";
-  img.addEventListener("click", () => openLightbox(image));
-  node.appendChild(img);
+  if (image.thumb_url) {
+    const img = document.createElement("img");
+    img.src = image.thumb_url;
+    img.alt = `Capture ${image.filename}`;
+    img.loading = "lazy";
+    img.addEventListener("click", () => openLightbox(image));
+    node.appendChild(img);
+  } else {
+    // No thumbnail means the file could not be decoded here - a RAW body file,
+    // or HEIC. Handing the browser the original would just render as a broken
+    // image, so say what it is instead. The capture itself is safely stored.
+    const placeholder = document.createElement("div");
+    placeholder.className = "tile-placeholder";
+    const kind = (image.filename.split(".").pop() || "file").toUpperCase();
+    placeholder.innerHTML = `<span class="tile-kind">${kind}</span>
+      <span class="tile-note">stored, no preview</span>`;
+    placeholder.title = "Original is charted; this format cannot be previewed in a browser";
+    node.appendChild(placeholder);
+  }
 
   const meta = document.createElement("figcaption");
   meta.className = "tile-meta";
   const when = withDate ? `${dateOf(image)} ${timeOf(image)}` : timeOf(image);
-  meta.innerHTML = `<strong>${image.filename}</strong>${when} &middot; ${cameraOf(image)}`;
+  let line = `<strong>${image.filename}</strong>${when} &middot; ${cameraOf(image)}`;
+  if (withPatient) {
+    const name = patientNameFor(image);
+    line += name
+      ? `<span class="tile-patient">${name}</span>`
+      : `<span class="tile-patient unassigned">Needs assignment</span>`;
+  }
+  meta.innerHTML = line;
   node.appendChild(meta);
 
   if (assignable) node.appendChild(assignControls(image));
@@ -224,11 +252,19 @@ function renderSession() {
   const banner = el("session-banner");
   const endButton = el("end-session");
   const live = state.view === "live";
+  const chart = state.view === "chart";
 
   banner.hidden = !live;
-  el("chart-banner").hidden = live;
+  // Only the chart view has a chart banner to show - the recent view must not
+  // leave an empty one on screen.
+  el("chart-banner").hidden = !chart;
   el("back-to-live").hidden = live;
-  el("capture-title").textContent = live ? "Live capture" : "Patient record";
+  el("show-recent").hidden = !live;
+  el("capture-title").textContent = live
+    ? "Live capture"
+    : chart
+      ? "Patient record"
+      : "Recent captures";
 
   if (!live) {
     endButton.hidden = true;
@@ -282,16 +318,23 @@ function renderChartBanner() {
 function renderGrid() {
   const grid = el("capture-grid");
   const chart = state.view === "chart";
-  const images = chart ? state.chartImages : state.captures;
+  const recent = state.view === "recent";
+  const images = chart ? state.chartImages : recent ? state.recentImages : state.captures;
 
   grid.innerHTML = "";
-  for (const image of images) grid.appendChild(tile(image, { withDate: chart }));
+  for (const image of images) {
+    // The recent view spans patients and days, so it is the one place both the
+    // date and who the photograph belongs to have to be on the tile.
+    grid.appendChild(tile(image, { withDate: chart || recent, withPatient: recent }));
+  }
 
   const empty = el("capture-empty");
   empty.hidden = images.length > 0;
   empty.textContent = chart
     ? "No photographs on file yet. Press Start capture, then take the photos."
-    : "Nothing captured yet in this session. Take a photo - it appears here on its own.";
+    : recent
+      ? "Nothing has been captured yet."
+      : "Nothing captured yet in this session. Take a photo - it appears here on its own.";
 }
 
 function renderUnassigned() {
@@ -331,14 +374,17 @@ function renderBridge(status) {
     dot.className = "dot online";
     text.textContent = device
       ? `Camera ready - ${device}`
-      : `Camera link ready (${ready.length} source)`;
+      : `Camera link ready (${ready.length} sources)`;
   }
 }
 
 /* ---------------- lightbox ---------------- */
 
 function openLightbox(image) {
-  el("lightbox-image").src = image.file_url;
+  // The preview is a 2048px JPEG; the original can be 24 MP and is often RAW,
+  // which a browser cannot render at all. `preview_url` is null when the
+  // original is already small enough, so falling back to it is correct.
+  el("lightbox-image").src = image.preview_url || image.file_url;
   el("lightbox-caption").textContent =
     `${image.filename} - ${cameraOf(image)} - ${dateOf(image)} ${timeOf(image)} - via ${image.source}`;
   el("lightbox").hidden = false;
@@ -357,6 +403,20 @@ async function openChart(patient) {
   }
   renderSession();
   renderChartBanner();
+  renderGrid();
+  renderPatients();
+}
+
+async function openRecent() {
+  /* Everything charted lately, whoever it belongs to.
+   *
+   * The live grid only ever shows the open session, and the patient record
+   * only one person - so without this there is no way to see that the system
+   * has been working at all until someone opens a session. */
+  state.view = "recent";
+  state.chartPatient = null;
+  state.recentImages = await api("/api/images/recent?limit=60");
+  renderSession();
   renderGrid();
   renderPatients();
 }
@@ -435,6 +495,15 @@ function connectEvents() {
           if (state.view === "live") renderGrid();
         }
       }
+      // Recent is a live view too - a photograph taken while it is open should
+      // appear there, and an assignment should update the tile already on it.
+      const seen = state.recentImages.findIndex((image) => image.id === data.id);
+      if (seen >= 0) {
+        state.recentImages[seen] = data;
+      } else {
+        state.recentImages.unshift(data);
+      }
+      if (state.view === "recent") renderGrid();
       if (data.status === "unassigned") {
         if (!state.unassigned.some((image) => image.id === data.id)) {
           state.unassigned.unshift(data);
@@ -467,6 +536,9 @@ async function boot() {
   el("patient-search").addEventListener("input", renderPatients);
   el("end-session").addEventListener("click", endSession);
   el("back-to-live").addEventListener("click", backToLive);
+  el("show-recent").addEventListener("click", () => {
+    openRecent().catch((error) => alert(`Could not load recent captures: ${error.message}`));
+  });
   el("add-patient").addEventListener("submit", addPatient);
   el("show-add-patient").addEventListener("click", () => {
     const form = el("add-patient");

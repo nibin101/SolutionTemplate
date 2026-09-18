@@ -40,6 +40,14 @@ from .config import settings
 
 THUMB_MAX_EDGE = 480
 
+# Long-edge cap for the lightbox preview. 2048 is large enough to judge a
+# clinical photograph on screen and small enough to cross a practice Wi-Fi
+# instantly - a 24 MP original is 20-40x this size. An original already at or
+# below this gets no preview at all: the file itself is the preview, and a
+# near-identical second copy would be pure waste.
+PREVIEW_MAX_EDGE = 2048
+PREVIEW_QUALITY = 88
+
 #: Where captures live until a human attaches them to a patient.
 UNASSIGNED_FOLDER = "_unassigned"
 
@@ -65,6 +73,7 @@ class StoredImage:
     content_hash: str
     stored_path: Path
     thumb_path: Path | None
+    preview_path: Path | None
     mime: str
     size_bytes: int
     width: int | None
@@ -175,6 +184,27 @@ def _read_metadata(image: Image.Image) -> tuple[str | None, str | None, str | No
 # --------------------------------------------------------------------------
 
 
+def _write_preview(image: Image.Image, content_hash: str) -> Path | None:
+    """Write the already-downscaled `image` as the content-addressed preview.
+
+    Content-addressed and sharded like thumbnails, for the same reason: the
+    patient folders must hold clinical photographs and nothing else. A failure
+    here is not fatal - the caller falls back to serving the original.
+    """
+    shard = settings.preview_dir / content_hash[:2]
+    shard.mkdir(parents=True, exist_ok=True)
+    candidate = shard / f"{content_hash}.jpg"
+    if candidate.exists():
+        return candidate
+    try:
+        image.convert("RGB").save(
+            candidate, "JPEG", quality=PREVIEW_QUALITY, optimize=True
+        )
+    except Exception:
+        return None
+    return candidate
+
+
 def store_image(data: bytes, filename: str, mime: str, folder: str) -> StoredImage:
     """Write bytes into `folder` and derive a thumbnail plus camera metadata."""
     content_hash = sha256_hex(data)
@@ -189,17 +219,31 @@ def store_image(data: bytes, filename: str, mime: str, folder: str) -> StoredIma
     width = height = None
     make = model = captured_at = None
     thumb_path: Path | None = None
+    preview_path: Path | None = None
 
     try:
         with Image.open(io.BytesIO(data)) as image:
             width, height = image.size
             make, model, captured_at = _read_metadata(image)
 
+            # Decoded once, resampled once. `working` is the preview-sized
+            # image when one is warranted, and the thumbnail is derived from
+            # that rather than from the full-resolution original.
+            oriented = ImageOps.exif_transpose(image)
+            if max(oriented.size) > PREVIEW_MAX_EDGE:
+                working = oriented.copy()
+                working.thumbnail((PREVIEW_MAX_EDGE, PREVIEW_MAX_EDGE), Image.LANCZOS)
+                preview_path = _write_preview(working, content_hash)
+            else:
+                # Already small enough to hand straight to a browser; a second
+                # near-identical copy would earn nothing.
+                working = oriented
+
             thumb_shard = settings.thumb_dir / content_hash[:2]
             thumb_shard.mkdir(parents=True, exist_ok=True)
             candidate = thumb_shard / f"{content_hash}.jpg"
             if not candidate.exists():
-                thumb = ImageOps.exif_transpose(image)
+                thumb = working.copy()
                 thumb.thumbnail((THUMB_MAX_EDGE, THUMB_MAX_EDGE))
                 thumb.convert("RGB").save(candidate, "JPEG", quality=82)
             thumb_path = candidate
@@ -208,11 +252,13 @@ def store_image(data: bytes, filename: str, mime: str, folder: str) -> StoredIma
         # preview. Losing the clinical image would be far worse than losing a
         # thumbnail, so this failure is intentionally swallowed.
         thumb_path = None
+        preview_path = None
 
     return StoredImage(
         content_hash=content_hash,
         stored_path=stored_path,
         thumb_path=thumb_path,
+        preview_path=preview_path,
         mime=mime,
         size_bytes=len(data),
         width=width,

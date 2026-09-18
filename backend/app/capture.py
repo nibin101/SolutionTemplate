@@ -165,15 +165,16 @@ def chart_capture(
         conn.execute(
             """
             INSERT INTO images (
-                id, content_hash, filename, stored_path, thumb_path, mime,
-                size_bytes, width, height, captured_at, received_at, source,
+                id, content_hash, filename, stored_path, thumb_path, preview_path,
+                mime, size_bytes, width, height, captured_at, received_at, source,
                 camera_make, camera_model, operatory, session_id, patient_id, status
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 image_id, digest, stored.stored_path.name,
                 str(stored.stored_path),
                 str(stored.thumb_path) if stored.thumb_path else None,
+                str(stored.preview_path) if stored.preview_path else None,
                 stored.mime, stored.size_bytes, stored.width, stored.height,
                 effective_captured_at, utcnow(), source,
                 stored.camera_make or camera_make,

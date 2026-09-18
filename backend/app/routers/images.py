@@ -63,6 +63,30 @@ def image_thumb(image_id: str):
     return FileResponse(path, media_type="image/jpeg")
 
 
+@router.get("/{image_id}/preview")
+def image_preview(image_id: str):
+    """Mid-size JPEG for the lightbox.
+
+    Opening a photograph must not pull a 24 MP original across the practice
+    network, so the viewer asks for this instead. Falls back to the original
+    when there is no preview - an image small enough not to need one, or a RAW
+    that could not be decoded - so a caller never has to special-case it.
+    """
+    with db_session() as conn:
+        row = _load(conn, image_id)
+
+    preview = row["preview_path"] if "preview_path" in row.keys() else None
+    if preview:
+        path = Path(preview)
+        if path.exists():
+            return FileResponse(path, media_type="image/jpeg")
+
+    path = Path(row["stored_path"])
+    if not path.exists():
+        raise HTTPException(410, "Image file is no longer on disk")
+    return FileResponse(path, media_type=row["mime"])
+
+
 @router.post("/{image_id}/assign")
 def assign_image(image_id: str, payload: AssignIn):
     """Attach a quarantined image to a patient, directly or via a session."""

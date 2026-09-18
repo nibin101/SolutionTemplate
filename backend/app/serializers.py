@@ -26,7 +26,20 @@ def image_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "status": row["status"],
         "file_url": f"/api/images/{row['id']}/file",
         "thumb_url": f"/api/images/{row['id']}/thumb" if row["thumb_path"] else None,
+        # Null when the original is already small enough to serve as its own
+        # preview, or when it could not be decoded at all (RAW). The UI falls
+        # back to `file_url` in both cases.
+        "preview_url": (
+            f"/api/images/{row['id']}/preview"
+            if _has(row, "preview_path") and row["preview_path"]
+            else None
+        ),
     }
+
+
+def _has(row: sqlite3.Row, column: str) -> bool:
+    """Tolerate rows selected before a column existed (see db._apply_migrations)."""
+    return column in row.keys()
 
 
 def patient_to_dict(row: sqlite3.Row) -> dict[str, Any]:

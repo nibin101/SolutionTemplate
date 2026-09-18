@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS images (
     filename        TEXT NOT NULL,
     stored_path     TEXT NOT NULL,
     thumb_path      TEXT,
+    preview_path    TEXT,
     mime            TEXT NOT NULL,
     size_bytes      INTEGER NOT NULL,
     width           INTEGER,
@@ -104,9 +105,26 @@ def session() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+#: Columns added after the first release. `CREATE TABLE IF NOT EXISTS` leaves an
+#: existing table alone, so a practice that has been running since before a
+#: column existed would never get it without this.
+_ADDED_COLUMNS = {
+    "images": {"preview_path": "TEXT"},
+}
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    for table, columns in _ADDED_COLUMNS.items():
+        present = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, sql_type in columns.items():
+            if name not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}")
+
+
 def init_db() -> None:
     with session() as conn:
         conn.executescript(SCHEMA)
+        _apply_migrations(conn)
 
 
 def audit(conn: sqlite3.Connection, actor: str, action: str,

@@ -380,10 +380,56 @@ main {
   background: #0c1013;
 }
 
+/* Shown instead of an <img> when the capture cannot be previewed in a browser
+   (RAW from a camera body, HEIC from a phone). The original is charted and
+   downloadable either way - this says so rather than showing a broken image. */
+.tile-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  background: #0c1013;
+  border-bottom: 1px solid var(--line);
+}
+
+.tile-kind {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  opacity: 0.85;
+}
+
+.tile-note {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .tile-meta {
   padding: 8px 10px;
   font-size: 12px;
   color: var(--muted);
+}
+
+/* Who the photograph belongs to - only shown in the recent view, which is the
+   one grid that spans patients. */
+.tile-patient {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--ink);
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-patient.unassigned {
+  color: var(--warn, #e8a533);
+  opacity: 1;
 }
 
 .tile-meta strong {

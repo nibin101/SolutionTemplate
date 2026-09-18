@@ -44,6 +44,12 @@ class Settings:
         return self.data_dir / "thumbnails"
 
     @property
+    def preview_dir(self) -> Path:
+        """Mid-size JPEGs for the lightbox, so opening a photo never pulls the
+        full-resolution original across the practice network."""
+        return self.data_dir / "previews"
+
+    @property
     def frontend_dir(self) -> Path:
         return REPO_DIR / "frontend" / "public"
 
@@ -63,6 +69,7 @@ def load_settings() -> Settings:
     )
     settings.image_dir.mkdir(parents=True, exist_ok=True)
     settings.thumb_dir.mkdir(parents=True, exist_ok=True)
+    settings.preview_dir.mkdir(parents=True, exist_ok=True)
     return settings
 
 
