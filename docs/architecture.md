@@ -187,10 +187,90 @@ No admin rights, no installer, no vendor driver required for the default path.
 
 ---
 
+## Where the photographs live, and how they leave
+
+**Decision: file the originals under the patient's own name, and treat that
+folder — not the database — as the record.**
+
+Everything lives under `DATA_DIR` (set in `backend/.env`, default `backend/data`):
+
+```
+backend/data/
+├── snapchart.db                       SQLite: patients, sessions, image rows, audit log
+├── photos/                            the originals, byte for byte
+│   ├── <First>_<Last>_<Chart>/<YYYY-MM-DD>/<original camera filename>
+│   └── _unassigned/<YYYY-MM-DD>/…     quarantine, until a human assigns it
+└── thumbnails/<hh>/<sha256>.jpg       480 px previews, sharded by hash prefix
+```
+
+Two layouts on purpose. Originals are addressed **by person**, because the thing
+a clinician does in a crisis is open a folder and look. Thumbnails are addressed
+**by content hash**, because they are derived data: they dedupe on their own,
+they never need to be found by hand, and keeping them out of the photo folders
+means those folders contain nothing but real photographs.
+
+The name comes first and the chart number last, because two patients genuinely
+can share a name and a photograph in the wrong person's folder is the one
+failure this system exists to prevent. An assignment out of quarantine *moves*
+the file (`storage.move_image`) rather than leaving a pointer behind, so the
+folder tree and the chart never disagree.
+
+### Sharing
+
+There are three ways a photograph leaves, and the first is the one that matters:
+
+| Route | Mechanism |
+| ----- | --------- |
+| **The folder** | `GET /api/patients/{id}/folder` returns the path; the clinician opens it in Explorer and copies, attaches or burns it |
+| **HTTP** | `GET /api/images/{id}/file` (original) and `/thumb` (preview) |
+| **PMS** | not built — `/api/ingest` is the declared seam, see (6) |
+
+Referring a case to a specialist is *copy one folder*. That works with this
+software uninstalled, with the database deleted, on a machine that has never
+heard of SnapChart. A content-addressed blob store would have been tidier and
+would have thrown that away, which is the whole reason we did not build one.
+
+Being straight about the limits, because they are the obvious questions:
+`/api/images/{id}/file` is **unauthenticated** — the UUID is the only thing
+guarding it, which is acceptable on loopback and thin once `-Lan` binds the
+server to the practice network. There is no export, no share link, no expiry,
+and the audit log records ingest and assignment but **not** retrieval.
+Clinician identity (see *What we would do next*) is what closes all of these.
+
+### Is the image still the image?
+
+**Decision: never re-encode an original, and prove the bytes end to end.**
+
+The backend writes the capture verbatim (`stored_path.write_bytes(data)`). Only
+the thumbnail is re-compressed. SnapChart is therefore provably not a source of
+quality loss — whatever the camera produced is what is on disk.
+
+Integrity is checked by SHA-256, computed by the bridge before the upload and
+recomputed by the backend before the insert; a mismatch is refused rather than
+charted. That proves the bytes the bridge *held* are the bytes that were
+*stored*, which covers the spool, the network hop and the multipart encoding.
+
+It does not cover the read off the camera itself, because the hash is computed
+after it. A stream that ends early without raising would be hashed in its
+truncated form and agreed on by both sides. The device reports the object size
+over MTP (`PID_OBJECT_SIZE`) and comparing it against the transferred length
+closes that gap; see *What we would do next*.
+
+---
+
 ## What we would do next
 
 - Push the charted image into a real PMS document API behind `/api/ingest`.
 - Clinician identity on the UI side (the bridge hop is a shared secret today).
+  This is also what puts authentication in front of image retrieval and an
+  access trail on reads, not only on writes.
+- Verify the transfer at the point of the read, not only after it: compare the
+  device-reported object size against the bytes actually transferred, reject a
+  JPEG that does not open with `FFD8` and close with `FFD9`, and treat a failed
+  decode as a rejection for JPEG/PNG rather than the silently-missing thumbnail
+  it currently produces (RAW must keep its exemption — PIL cannot open it).
+- Re-hash stored files against `images.content_hash` on a schedule, to catch bit
+  rot, antivirus quarantine or a bad restore long after the capture.
 - Per-image view classification — a five-shot series auto-labelled frontal,
   occlusal, buccal — using the capture order the simulator already models.
 - Encryption at rest for the spool and image store.

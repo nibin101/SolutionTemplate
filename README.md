@@ -183,12 +183,32 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 `BRIDGE_TOKEN` into `backend\.env` and `bridge\.env`, and seeds demo patients.
 It is safe to re-run; existing `.env` files are left alone.
 
-Then, in two terminals:
+Then start it — one command:
+
+```powershell
+scripts\start.ps1                       # opens http://127.0.0.1:8000
+scripts\start.ps1 -Simulate             # demo mode, no camera needed
+scripts\stop.ps1                        # stop both
+```
+
+That launches the backend, waits until it actually answers, starts the bridge
+and opens the chair-side view. Each service keeps its own window so you can
+still read its log.
+
+<details>
+<summary>Starting the two services separately</summary>
+
+They are separate processes on purpose: in a practice, one backend serves the
+whole clinic and a bridge runs on each operatory PC. To run them individually —
+or on different machines — use:
 
 ```powershell
 scripts\start-backend.ps1               # http://127.0.0.1:8000
 scripts\start-bridge.ps1 -Simulate      # or omit -Simulate for a real camera
+scripts\start-bridge.ps1 -Tray          # background, system-tray icon
 ```
+
+</details>
 
 To check what a particular machine can do before trusting it:
 
@@ -199,7 +219,7 @@ scripts\start-bridge.ps1 -Check
 ### Using a phone as the camera
 
 ```powershell
-scripts\start-backend.ps1 -Lan
+scripts\start.ps1 -Lan
 ```
 
 This binds the server to the local network (for that run only) and prints the
@@ -248,12 +268,10 @@ Full tables: **[backend/README.md](./backend/README.md)** ·
 
 _This doubles as the live demo runbook (3–5 min)._
 
-1. **Boot** — `scripts\start-backend.ps1`, open <http://127.0.0.1:8000>. The
-   status pill reads *Camera bridge offline*: nothing is capturing yet.
-2. **Start the background service** — `scripts\start-bridge.ps1 -Tray` (add
-   `-Simulate` if there is no camera). The tray icon turns green and the pill
-   changes to *Camera ready* with the camera's own model name. Point out that
-   from here on nobody touches the app.
+1. **Boot** — `scripts\start.ps1` (add `-Simulate` if there is no camera). The
+   backend, the camera bridge and the chair-side view all come up from one
+   command. The status pill goes to *Camera ready* with the camera's own model
+   name. Point out that from here on nobody touches the app.
 3. **Take a photo with no session open** — nothing happens, and that is the
    point. The status line reads *no capture session open*; the shot stays on the
    camera. Plug in a phone at this point and show that none of its camera roll
