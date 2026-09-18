@@ -8,7 +8,7 @@
 | ----------------- | --------------------------------------------------- | 
 | **Problem:**      | Problem 4 — Automated Camera Workflow               | 
 | **Team Name:**    | CJD                                                 |
-| **Team Members:** | Ajo Jose · Woitiwe Simpson · Alan Joy · Nibin Thomas|
+| **Team Members:** | Ajo Jose · Woitiwe Simson · Alan Joy · Nibin Thomas|
 | **Institution:**  | CET                                                 |
 | **Live Demo:**    | [Demo link goes here]                               |
 | **Pitch Video:**  | [Social media pitch video link]                     |
