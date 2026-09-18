@@ -1,0 +1,24 @@
+{
+  "practice_id": "DEMO-001",
+  "sessions": [
+    {
+      "patient_id": "P001",
+      "patient_name": "Smith, John",
+      "session_date": "2026-09-17",
+      "filename_prefix": "JOHN_",
+      "active": true
+    },
+    {
+      "patient_id": "P002",
+      "patient_name": "Doe, Jane",
+      "session_date": "2026-09-17",
+      "filename_prefix": "JANE_",
+      "active": false
+    }
+  ],
+  "default_patient_id": "UNMATCHED",
+  "default_patient_name": "Unmatched Patient",
+  "preview_max_px": 2048,
+  "preview_quality": 92,
+  "supported_extensions": [".jpg", ".jpeg", ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".png"]
+}

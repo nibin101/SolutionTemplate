@@ -1,52 +1,126 @@
-# Backend — [Project Name]
+# Backend — Dental Camera Workflow
 
-Put your server-side code here: REST/graph APIs, business logic, database models,
-ML inference services, background jobs, etc.
+Automated dental clinical photography pipeline for CareStack.
 
-## Stack (fill in)
+## Stack
 
-- Language / runtime: [your choice]
-- Framework: [your choice]
-- Database: [your choice]
-- Other services: [ML runtime, queues, auth, etc.]
+- **Language / runtime:** Python 3.11
+- **Framework:** FastAPI + uvicorn
+- **File watching:** watchdog (inotify / FSEvents / ReadDirectoryChangesW)
+- **EXIF reading:** exifread
+- **Image ops:** Pillow (preview generation — originals never modified)
+- **RAW decode:** rawpy (libraw)
+- **HTTP client:** httpx (async, for CareStack API)
+- **Tests:** pytest + pytest-asyncio
 
-## Local Setup (fill in)
+## System Prerequisites
+
+```bash
+# Ubuntu / Debian (for RAW file support)
+sudo apt install libraw-dev gphoto2 libgphoto2-dev
+
+# macOS (Homebrew)
+brew install libraw gphoto2
+```
+
+> RAW support (CR2, CR3, NEF, ARW) requires `libraw-dev`. JPEG-only mode
+> works without it.
+
+> USB tethering requires `gphoto2`. If GNOME auto-mounts your camera, run:
+> `sudo pkill gvfsd-gphoto2` before starting.
+
+## Local Setup
 
 ```bash
 cd backend
-<install backend dependencies — command for your package manager>
-<copy and edit your environment file, e.g. .env.example -> .env>
-<start the backend server>
+
+# Create and activate a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Copy and edit environment file
+cp .env.example .env
+
+# Copy and edit session config
+cp config.json.example config.json
+# Edit config.json: set the active patient session and filename prefix
+
+# Create inbox / outbox directories
+mkdir -p inbox outbox
+
+# Start the server
+uvicorn main:app --reload --port 8000
 ```
+
+Open `http://localhost:8000` for the live dashboard.
 
 ## Environment Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `DATABASE_URL` | Database connection string | `your-database-connection-string` |
-| `API_KEY` | Third-party service API key | `sk-xxxxxxxxxxxxxxxxxx` |
-| `PORT` | Port the backend listens on | `8000` |
+| Variable | Description | Default |
+|---|---|---|
+| `CAMERA_MODE` | `tether` / `watch` / `mock` | `mock` |
+| `INBOX_PATH` | Directory to watch for new images | `./inbox` |
+| `OUTBOX_PATH` | Root of organized output | `./outbox` |
+| `MANIFEST_PATH` | Duplicate-detection manifest file | `./outbox/.manifest.json` |
+| `SESSION_CONFIG_PATH` | Patient session config JSON | `./config.json` |
+| `CARESTACK_MOCK` | `true` → no real HTTP calls | `true` |
+| `CARESTACK_BASE_URL` | CareStack API base URL | — |
+| `CARESTACK_CLIENT_ID` | OAuth2 client ID | — |
+| `CARESTACK_CLIENT_SECRET` | OAuth2 client secret | — |
+| `PORT` | Server port | `8000` |
 
-> Values above are illustrative examples only — replace them with your own.
-> Never commit real `.env` values — see root `.gitignore`. A starting point is
-> provided in `.env.example`.
-
-## Tests
+## Running Tests
 
 ```bash
-# Replace <command> with the test/lint command for your stack
-cd backend && <your test command>
+cd backend
+pip install piexif  # needed for EXIF test fixtures
+pytest -v
 ```
 
-## Project Layout (adjust to your stack)
+All tests run without a camera, without CareStack credentials, and without
+any files outside of pytest's temporary directories.
+
+### Key test — zero quality loss proof
+
+```
+tests/test_ingest.py::TestProcessFile::test_original_file_unchanged_after_copy
+tests/test_preview.py::TestGeneratePreview::test_original_file_unchanged_after_preview
+```
+
+These tests compare SHA-256 hashes before and after the pipeline to prove
+the original file is never modified.
+
+## API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | Live dashboard |
+| `GET` | `/status` | Last 200 ingest results (JSON) |
+| `GET` | `/config` | Current session config |
+| `POST` | `/demo/ingest` | Trigger one demo image through pipeline |
+| `POST` | `/demo/ingest-all` | Trigger all demo images |
+| `GET` | `/docs` | Auto-generated API docs (Swagger UI) |
+
+## Project Layout
 
 ```
 backend/
-├── <entry point>      # server/app entry point
-├── <api / routes>     # endpoints
-├── <config / core>    # config, security
-├── <models / data>    # database models & access
-├── <services>         # business logic
-├── tests/
-└── .env.example
+├── main.py              # FastAPI app — wires everything together
+├── ingest.py            # Core pipeline: hash, EXIF, patient, copy
+├── preview.py           # Safe preview generation (never modifies original)
+├── carestack.py         # CareStack API client + MockCareStackClient
+├── watcher.py           # watchdog filesystem event handler
+├── tether.py            # gphoto2 USB tethering
+├── config.json.example  # Session config template
+├── pytest.ini
+├── requirements.txt
+├── .env.example
+└── tests/
+    ├── conftest.py      # Shared fixtures
+    ├── test_ingest.py
+    ├── test_preview.py
+    └── test_carestack.py
 ```

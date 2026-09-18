@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dental Camera Workflow — CareStack</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --border:   #2a2d3a;
+      --accent:   #4f8ef7;
+      --accent2:  #7c6bff;
+      --green:    #22c55e;
+      --yellow:   #f59e0b;
+      --red:      #ef4444;
+      --gray:     #8b8fa8;
+      --text:     #e2e4f0;
+      --subtext:  #6b7280;
+      --font:     'Inter', system-ui, -apple-system, sans-serif;
+      --radius:   10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Layout ───────────────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .logo span { color: var(--accent); }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--subtext);
+    }
+
+    .status-pill .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    main { padding: 28px 32px; max-width: 1280px; margin: 0 auto; }
+
+    /* ── Stat cards ───────────────────────────────────────────────────── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .stat-card .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--subtext);
+      margin-bottom: 6px;
+    }
+
+    .stat-card .value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .stat-card .value.green { color: var(--green); }
+    .stat-card .value.yellow { color: var(--yellow); }
+    .stat-card .value.gray { color: var(--gray); }
+
+    /* ── Controls bar ─────────────────────────────────────────────────── */
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+      align-items: center;
+    }
+
+    .btn {
+      padding: 8px 18px;
+      border-radius: 6px;
+      border: none;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+
+    .btn:hover { opacity: .85; }
+    .btn:active { opacity: .7; }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+    .btn-danger { background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b; }
+
+    .mode-badge {
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      background: #1e293b;
+      border: 1px solid var(--border);
+      color: var(--accent);
+    }
+
+    /* ── Active session banner ────────────────────────────────────────── */
+    #session-banner {
+      background: #0d1f3c;
+      border: 1px solid #1e3a5f;
+      border-radius: var(--radius);
+      padding: 14px 20px;
+      margin-bottom: 24px;
+      font-size: 13px;
+      color: #93c5fd;
+      display: none;
+    }
+
+    #session-banner strong { color: #bfdbfe; }
+
+    /* ── Results table ────────────────────────────────────────────────── */
+    .table-wrapper {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .table-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #last-updated { font-size: 11px; color: var(--subtext); font-weight: 400; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--subtext);
+      background: #13151f;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    tr:hover td { background: #1e2030; }
+
+    /* ── Status badges ────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-ingested  { background: #14532d; color: #86efac; }
+    .badge-duplicate { background: #1e1b4b; color: #a5b4fc; }
+    .badge-error     { background: #450a0a; color: #fca5a5; }
+    .badge-skipped   { background: #1c1917; color: #a8a29e; }
+
+    .badge-carestack-uploaded { background: #0c2f46; color: #7dd3fc; }
+    .badge-carestack-mock     { background: #1a1a2e; color: #a78bfa; }
+    .badge-carestack-error    { background: #450a0a; color: #fca5a5; }
+    .badge-carestack-pending  { background: #1c1917; color: #a8a29e; }
+
+    /* ── Preview thumbnail ────────────────────────────────────────────── */
+    .thumb {
+      width: 40px;
+      height: 40px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    .thumb-placeholder {
+      width: 40px;
+      height: 40px;
+      border-radius: 4px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    /* ── Empty state ──────────────────────────────────────────────────── */
+    #empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--subtext);
+    }
+
+    #empty-state .big-icon { font-size: 40px; margin-bottom: 12px; }
+    #empty-state p { font-size: 15px; margin-bottom: 6px; color: var(--gray); }
+    #empty-state small { font-size: 12px; }
+
+    /* ── Toast notification ───────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: 13px;
+      max-width: 320px;
+      opacity: 0;
+      transition: opacity .3s;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    📷 <span>DentalCam</span>&nbsp;→&nbsp;CareStack
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+    <span class="mode-badge" id="mode-badge">⏳ connecting…</span>
+    <div class="status-pill">
+      <div class="dot"></div>
+      <span id="status-text">Live</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- Stats row -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">Images Ingested</div>
+      <div class="value green" id="count-ingested">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Duplicates Skipped</div>
+      <div class="value yellow" id="count-duplicates">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Errors</div>
+      <div class="value" id="count-errors">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">CareStack</div>
+      <div class="value gray" id="cs-mode">—</div>
+    </div>
+  </div>
+
+  <!-- Active session banner -->
+  <div id="session-banner"></div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="btn btn-primary" onclick="demoIngest()">▶ Trigger Demo Capture</button>
+    <button class="btn btn-primary" onclick="demoIngestAll()">▶▶ Ingest All Demo Images</button>
+    <button class="btn" style="background:#059669;color:#fff;" onclick="document.getElementById('phone-file-input').click()">📸 Snap / Upload from Phone</button>
+    <input type="file" id="phone-file-input" accept="image/*" capture="environment" style="display:none;" onchange="uploadPhoto(event)">
+    <button class="btn btn-secondary" onclick="resetDemo()">🔄 Reset Manifest</button>
+    <button class="btn btn-secondary" onclick="window.open('/docs','_blank')">API Docs</button>
+    <span style="font-size:12px;color:var(--subtext);margin-left:auto;">
+      📱 Phone URL on Wi-Fi: <strong style="color:var(--accent);">http://192.168.45.27:8000</strong>
+    </span>
+  </div>
+
+  <!-- Results table -->
+  <div class="table-wrapper">
+    <div class="table-header">
+      <span>Recent Activity</span>
+      <span id="last-updated">—</span>
+    </div>
+    <div id="table-container">
+      <div id="empty-state">
+        <div class="big-icon">📂</div>
+        <p>Watching for images…</p>
+        <small>Click "Trigger Demo Capture" or drop a JPEG into the inbox folder</small>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let lastResultCount = 0;
+
+  // ── Polling ────────────────────────────────────────────────────────────────
+  async function fetchStatus() {
+    try {
+      const res = await fetch('/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      updateUI(data);
+    } catch (e) {
+      document.getElementById('status-text').textContent = 'Reconnecting…';
+    }
+  }
+
+  // ── UI update ──────────────────────────────────────────────────────────────
+  function updateUI(data) {
+    // Stat cards
+    document.getElementById('count-ingested').textContent = data.total_ingested;
+    document.getElementById('count-duplicates').textContent = data.total_duplicates;
+    document.getElementById('count-errors').textContent = data.total_errors;
+    document.getElementById('cs-mode').textContent = data.carestack_mock ? 'Mock' : 'Live';
+
+    // Mode badge
+    const modeBadge = document.getElementById('mode-badge');
+    const modeLabel = { tether: '🔌 USB Tether', watch: '💾 SD Card Watch', mock: '🧪 Demo Mode' };
+    modeBadge.textContent = modeLabel[data.camera_mode] || data.camera_mode;
+
+    // Active session banner
+    const banner = document.getElementById('session-banner');
+    if (data.active_sessions && data.active_sessions.length > 0) {
+      const s = data.active_sessions[0];
+      banner.innerHTML = `Active session: <strong>${s.patient_name}</strong> (${s.patient_id})`;
+      banner.style.display = 'block';
+    } else {
+      banner.style.display = 'none';
+    }
+
+    // Last updated
+    document.getElementById('last-updated').textContent =
+      'Updated ' + new Date().toLocaleTimeString();
+
+    // Toast on new result
+    if (data.results.length > lastResultCount && lastResultCount > 0) {
+      const r = data.results[0];
+      showToast(`${r.filename} → ${r.status === 'ingested' ? '✅ Ingested' : r.status === 'duplicate' ? '⏩ Duplicate' : '❌ Error'}`);
+    }
+    lastResultCount = data.results.length;
+
+    // Results table
+    renderTable(data.results);
+  }
+
+  function renderTable(results) {
+    const container = document.getElementById('table-container');
+
+    if (!results || results.length === 0) {
+      container.innerHTML = `
+        <div id="empty-state">
+          <div class="big-icon">📂</div>
+          <p>Watching for images…</p>
+          <small>Click "Trigger Demo Capture" or drop a JPEG into the inbox folder</small>
+        </div>`;
+      return;
+    }
+
+    const rows = results.map(r => {
+      const statusBadge = `<span class="badge badge-${r.status}">${statusIcon(r.status)} ${r.status}</span>`;
+      const csBadge = r.carestack_status
+        ? `<span class="badge badge-carestack-${r.carestack_status}">${csIcon(r.carestack_status)} ${r.carestack_status}</span>`
+        : '';
+      const preview = r.preview_dest
+        ? `<img class="thumb" src="/outbox/${encodePreviewPath(r.preview_dest)}" alt="preview" onerror="this.style.display='none'">`
+        : `<div class="thumb-placeholder">📷</div>`;
+      const time = r.processed_at ? new Date(r.processed_at).toLocaleTimeString() : '';
+
+      return `<tr>
+        <td>${preview}</td>
+        <td style="font-family:monospace;color:#93c5fd">${esc(r.filename)}</td>
+        <td>${esc(r.patient_name || '—')}<br><small style="color:var(--subtext)">${esc(r.patient_id || '')}</small></td>
+        <td>${esc(r.capture_date || '—')}</td>
+        <td>${statusBadge}</td>
+        <td>${csBadge}</td>
+        <td style="color:var(--subtext);font-size:11px">${time}</td>
+      </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Preview</th>
+            <th>Filename</th>
+            <th>Patient</th>
+            <th>Capture Date</th>
+            <th>Status</th>
+            <th>CareStack</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  // ── Demo actions ───────────────────────────────────────────────────────────
+  async function demoIngest() {
+    try {
+      const res = await fetch('/demo/ingest', { method: 'POST' });
+      const data = await res.json();
+      showToast(res.ok ? `Queued: ${data.queued}` : `Error: ${data.detail}`);
+    } catch (e) {
+      showToast('Request failed — is the server running?');
+    }
+  }
+
+  async function demoIngestAll() {
+    try {
+      const res = await fetch('/demo/ingest-all', { method: 'POST' });
+      const data = await res.json();
+      showToast(res.ok ? `Queued ${data.count} files` : `Error: ${data.detail}`);
+    } catch (e) {
+      showToast('Request failed — is the server running?');
+    }
+  }
+
+  async function uploadPhoto(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    showToast(`Uploading ${file.name}…`);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      showToast(res.ok ? `Queued: ${file.name}` : `Error: ${data.detail}`);
+      event.target.value = '';
+    } catch (e) {
+      showToast('Upload failed — check connection');
+    }
+  }
+
+  async function resetDemo() {
+    try {
+      const res = await fetch('/demo/reset', { method: 'POST' });
+      const data = await res.json();
+      showToast(data.message);
+      lastResultCount = 0;
+      fetchStatus();
+    } catch (e) {
+      showToast('Reset failed');
+    }
+  }
+
+
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function statusIcon(s) {
+    return { ingested: '✅', duplicate: '⏩', error: '❌', skipped: '—' }[s] || '';
+  }
+
+  function csIcon(s) {
+    return { uploaded: '☁️', mock: '🧪', error: '❌', pending: '⏳' }[s] || '';
+  }
+
+  function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML;
+  }
+
+  // Convert absolute outbox path to a relative URL path
+  // e.g. "/home/.../outbox/P001_Smith/2026-09-17/IMG_preview.jpg"
+  //   → "P001_Smith/2026-09-17/IMG_preview.jpg"
+  function encodePreviewPath(fullPath) {
+    // Strip everything up to and including "outbox/"
+    const marker = 'outbox/';
+    const idx = fullPath.indexOf(marker);
+    if (idx === -1) return '';
+    return fullPath.slice(idx + marker.length).split('/').map(encodeURIComponent).join('/');
+  }
+
+  // ── Start polling ──────────────────────────────────────────────────────────
+  fetchStatus();
+  setInterval(fetchStatus, 2000);
+</script>
+
+</body>
+</html>

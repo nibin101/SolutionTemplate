@@ -17,13 +17,32 @@ credentials.json
 
 # ------------------------------------------------------------------
 # Stack-specific rules
-# After your team picks a stack, add ignore rules for it below.
-# Examples to uncomment/adjust for common cases:
-#   # Node / JS / TS        ->  node_modules/, dist/, build/, coverage/
-#   # Python                ->  __pycache__/, .venv/, venv/
-#   # Java / JVM            ->  target/, .gradle/, *.class
-#   # Flutter / Dart        ->  .dart_tool/, build/, .packages
 # ------------------------------------------------------------------
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+
+# Application runtime directories (never commit these)
+inbox/
+outbox/
+backend/config.json
+
+# Demo images (local only — add your own)
+demo_images/*.jpg
+demo_images/*.jpeg
+demo_images/*.cr2
+demo_images/*.nef
+demo_images/*.arw
 
 # ------------------------------------------------------------------
 # Editors / IDEs
