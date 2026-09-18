@@ -179,6 +179,7 @@ flowchart TD
     WATCH["👁️ Event Listener\ngphoto2 wait_for_event\nOR watchdog inotify"]
     INGEST["⚙️ Ingest Pipeline\nbackend/ingest.py"]
     HASH["🔍 Duplicate Check\nSHA-256 manifest.json"]
+    QUAL["⚙️ Quality Gate\ncv2 Laplacian blur\nHaar face detect"]
     EXIF["🏷️ EXIF Reader\nexifread\ncapture date + camera model"]
     SESS["📋 Session Resolver\nbackend/session.py\nfilename prefix → patient ID"]
     STORE["🗂️ Originals Store\nshutil.copy2 — byte-for-bit\noutbox/P001_Smith/2026-09-17/IMG_4823.JPG"]
@@ -192,7 +193,8 @@ flowchart TD
     MOCK_SRC --> WATCH
     WATCH --> INGEST
     INGEST --> HASH
-    HASH -->|not duplicate| EXIF
+    HASH --> QUAL
+    QUAL --> EXIF
     EXIF --> SESS
     SESS --> STORE
     STORE --> PREV
@@ -365,7 +367,8 @@ async def test_original_path_passed_not_preview():
 | **Trigger a capture** | Click "Trigger Demo" (or `cp demo_images/IMG_4823.JPG inbox/`) | 5 s |
 | **Row appears live** | `IMG_4823.JPG · Smith, John · 2026-09-17 · ✅ Ingested · ☁️ CareStack: OK` | 10 s |
 | **Show outbox** | `outbox/P001_Smith_John/2026-09-17/IMG_4823.JPG` (original) + `_preview.jpg` | 30 s |
-| **Drop all 12 images** | `cp demo_images/*.JPG inbox/` — 12 rows appear | 30 s |
+| **Drop all 12 images** | `cp demo_images/*.JPG inbox/` — 12 rows appear (2 ingested, 1 rejected if blurry present) | 30 s |
+| **Quality gate check** | Blurry / no-face images shown as **REJECTED** on dashboard with reason; no outbox copy | 10 s |
 | **Run duplicate detection** | Same copy again → 12 rows show "⏩ Skipped" | 15 s |
 | **Run tests live** | `pytest backend/tests/ -v` — all pass including SHA-256 proof | 30 s |
 | **Wrap up** | "No SD card removal. No folder creation. No drag-and-drop. No quality loss. One config change per session." | 30 s |

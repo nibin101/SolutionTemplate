@@ -268,6 +268,7 @@ async def get_status():
         "outbox": str(OUTBOX_PATH.resolve()),
         "total_ingested": sum(1 for r in result_history if r["status"] == "ingested"),
         "total_duplicates": sum(1 for r in result_history if r["status"] == "duplicate"),
+        "total_rejected": sum(1 for r in result_history if r["status"] == "rejected"),
         "total_errors": sum(1 for r in result_history if r["status"] == "error"),
         "active_sessions": active_sessions,
         "results": list(result_history),
@@ -291,6 +292,16 @@ async def get_config():
             }
             for s in config.sessions
         ],
+        "quality": {
+            "enabled": config.quality.enabled,
+            "analysis_max_px": config.quality.analysis_max_px,
+            "blur_enabled": config.quality.blur_enabled,
+            "blur_min_variance": config.quality.blur_min_variance,
+            "face_enabled": config.quality.face_enabled,
+            "face_required_keywords": list(config.quality.face_required_keywords),
+            "face_optional_keywords": list(config.quality.face_optional_keywords),
+            "min_face_px": config.quality.min_face_px,
+        },
     })
 
 
@@ -413,6 +424,9 @@ def _result_to_dict(result: IngestResult) -> dict:
         "carestack_status": result.carestack_status,
         "sha256": result.sha256[:8] + "…" if result.sha256 else "",
         "error_message": result.error_message,
+        "quality_score": result.quality_score,
+        "quality_faces": result.quality_faces,
+        "quality_reasons": result.quality_reasons,
         "processed_at": result.processed_at,
     }
 

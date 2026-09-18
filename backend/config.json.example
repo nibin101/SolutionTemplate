@@ -20,5 +20,15 @@
   "default_patient_name": "Unmatched Patient",
   "preview_max_px": 2048,
   "preview_quality": 92,
-  "supported_extensions": [".jpg", ".jpeg", ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".png"]
+  "supported_extensions": [".jpg", ".jpeg", ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".png"],
+  "quality": {
+    "enabled": true,
+    "analysis_max_px": 512,
+    "blur_enabled": true,
+    "blur_min_variance": 60,
+    "face_enabled": true,
+    "face_required_keywords": ["frontal", "smile", "repose", "face", "extraoral"],
+    "face_optional_keywords": ["profile"],
+    "min_face_px": 20
+  }
 }

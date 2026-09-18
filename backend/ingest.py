@@ -25,6 +25,8 @@ from typing import Optional
 
 import exifread
 
+from quality import QualityConfig, QualityResult, assess_image
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -51,13 +53,14 @@ class Config:
     preview_max_px: int
     preview_quality: int
     supported_extensions: list[str]
+    quality: QualityConfig = field(default_factory=QualityConfig)
 
 
 @dataclass
 class IngestResult:
     """Outcome of processing a single image file."""
     filename: str
-    status: str                    # "ingested" | "duplicate" | "error" | "skipped"
+    status: str                    # "ingested" | "duplicate" | "error" | "skipped" | "rejected"
     patient_id: str = ""
     patient_name: str = ""
     capture_date: str = ""
@@ -66,6 +69,9 @@ class IngestResult:
     carestack_status: str = ""     # "uploaded" | "mock" | "error" | "pending"
     sha256: str = ""
     error_message: str = ""
+    quality_score: float = 0.0     # blur variance from the quality gate
+    quality_faces: int = 0         # faces detected by the quality gate
+    quality_reasons: list[str] = field(default_factory=list)
     processed_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
@@ -89,6 +95,25 @@ def load_config(config_path: Path) -> Config:
         for s in raw.get("sessions", [])
     ]
 
+    q = raw.get("quality", {}) or {}
+    quality = QualityConfig(
+        enabled=q.get("enabled", True),
+        analysis_max_px=int(q.get("analysis_max_px", 512)),
+        blur_enabled=q.get("blur_enabled", True),
+        blur_min_variance=float(q.get("blur_min_variance", 60.0)),
+        face_enabled=q.get("face_enabled", True),
+        face_required_keywords=tuple(
+            q.get(
+                "face_required_keywords",
+                ["frontal", "smile", "repose", "face", "extraoral"],
+            )
+        ),
+        face_optional_keywords=tuple(
+            q.get("face_optional_keywords", ["profile"])
+        ),
+        min_face_px=int(q.get("min_face_px", 20)),
+    )
+
     return Config(
         practice_id=raw.get("practice_id", ""),
         sessions=sessions,
@@ -99,6 +124,7 @@ def load_config(config_path: Path) -> Config:
         supported_extensions=[
             ext.lower() for ext in raw.get("supported_extensions", [".jpg", ".jpeg"])
         ],
+        quality=quality,
     )
 
 
@@ -307,6 +333,25 @@ def process_file(
             patient_name=manifest[sha256].get("patient_name", ""),
         )
 
+    # Step 3.5 — Quality gate (blur + face detection)
+    # Rejected images are not stored, not logged to the manifest, and never
+    # uploaded — the dashboard surfaces the reason so the photo is retaken.
+    quality = QualityResult(passed=True)
+    if config.quality.enabled:
+        quality = assess_image(source_path, config.quality)
+        if not quality.passed:
+            reason_text = "; ".join(quality.reasons)
+            logger.info("Quality gate rejected %s: %s", filename, reason_text)
+            return IngestResult(
+                filename=filename,
+                status="rejected",
+                sha256=sha256,
+                error_message=reason_text,
+                quality_score=quality.blur_score,
+                quality_faces=quality.faces_detected,
+                quality_reasons=quality.reasons,
+            )
+
     # Step 4 — EXIF date
     capture_date = extract_capture_date(source_path)
 
@@ -355,4 +400,7 @@ def process_file(
         original_dest=str(original_dest),
         preview_dest=str(preview_dest),
         carestack_status="pending",
+        quality_score=quality.blur_score,
+        quality_faces=quality.faces_detected,
+        quality_reasons=quality.reasons,
     )

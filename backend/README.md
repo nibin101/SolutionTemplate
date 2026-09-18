@@ -11,6 +11,7 @@ Automated dental clinical photography pipeline for CareStack.
 - **Image ops:** Pillow (preview generation — originals never modified)
 - **RAW decode:** rawpy (libraw)
 - **HTTP client:** httpx (async, for CareStack API)
+- **Computer vision:** opencv-python-headless (Haar face detection + Laplacian blur; pinned <5.0 as Haar was removed in OpenCV 5)
 - **Tests:** pytest + pytest-asyncio
 
 ## System Prerequisites
@@ -109,18 +110,20 @@ the original file is never modified.
 ```
 backend/
 ├── main.py              # FastAPI app — wires everything together
-├── ingest.py            # Core pipeline: hash, EXIF, patient, copy
+├── ingest.py            # Core pipeline: hash, EXIF, patient resolve, copy, quality gate
 ├── preview.py           # Safe preview generation (never modifies original)
+├── quality.py           # Blur + face detection quality gate (OpenCV Haar + Laplacian)
 ├── carestack.py         # CareStack API client + MockCareStackClient
 ├── watcher.py           # watchdog filesystem event handler
 ├── tether.py            # gphoto2 USB tethering
-├── config.json.example  # Session config template
+├── config.json.example  # Session config template (includes "quality" block)
 ├── pytest.ini
 ├── requirements.txt
 ├── .env.example
 └── tests/
-    ├── conftest.py      # Shared fixtures
+    ├── conftest.py      # Shared fixtures + quality test fixtures
     ├── test_ingest.py
     ├── test_preview.py
-    └── test_carestack.py
+    ├── test_carestack.py
+    └── test_quality.py   # New: unit + integration tests for the quality gate
 ```

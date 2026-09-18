@@ -226,8 +226,10 @@
 
     .badge-ingested  { background: #14532d; color: #86efac; }
     .badge-duplicate { background: #1e1b4b; color: #a5b4fc; }
+    .badge-rejected  { background: #450a0a; color: #fca5a5; }
     .badge-error     { background: #450a0a; color: #fca5a5; }
     .badge-skipped   { background: #1c1917; color: #a8a29e; }
+    .stat-card .value.red { color: var(--red); }
 
     .badge-carestack-uploaded { background: #0c2f46; color: #7dd3fc; }
     .badge-carestack-mock     { background: #1a1a2e; color: #a78bfa; }
@@ -284,6 +286,33 @@
     }
 
     #toast.show { opacity: 1; }
+
+    /* ── Retake alert (prominent, dismissible) ───────────────────────── */
+    #retake-banner {
+      display: none;
+      background: #450a0a;
+      border: 1px solid #ef4444;
+      border-left: 4px solid #ef4444;
+      border-radius: var(--radius);
+      padding: 14px 20px;
+      margin-bottom: 20px;
+      color: #fecaca;
+      font-size: 14px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    #retake-banner strong { color: #fca5a5; }
+
+    #retake-banner .close {
+      background: none;
+      border: none;
+      color: #fca5a5;
+      font-size: 18px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 2px 6px;
+    }
   </style>
 </head>
 <body>
@@ -314,6 +343,10 @@
       <div class="value yellow" id="count-duplicates">0</div>
     </div>
     <div class="stat-card">
+      <div class="label">Rejected — Need Retake</div>
+      <div class="value red" id="count-rejected">0</div>
+    </div>
+    <div class="stat-card">
       <div class="label">Errors</div>
       <div class="value" id="count-errors">0</div>
     </div>
@@ -325,6 +358,12 @@
 
   <!-- Active session banner -->
   <div id="session-banner"></div>
+
+  <!-- Retake alert -->
+  <div id="retake-banner">
+    <span>📸 <strong>Photo rejected:</strong> <span id="retake-reason">…</span> — please <strong>retake the photo</strong>.</span>
+    <button class="close" onclick="dismissRetake()" title="Dismiss">×</button>
+  </div>
 
   <!-- Controls -->
   <div class="controls">
@@ -379,6 +418,7 @@
     // Stat cards
     document.getElementById('count-ingested').textContent = data.total_ingested;
     document.getElementById('count-duplicates').textContent = data.total_duplicates;
+    document.getElementById('count-rejected').textContent = data.total_rejected || 0;
     document.getElementById('count-errors').textContent = data.total_errors;
     document.getElementById('cs-mode').textContent = data.carestack_mock ? 'Mock' : 'Live';
 
@@ -397,6 +437,19 @@
       banner.style.display = 'none';
     }
 
+    // Retake banner — show whenever the most recent image was rejected
+    const retake = document.getElementById('retake-banner');
+    const latest = data.results[0];
+    if (latest && latest.status === 'rejected') {
+      document.getElementById('retake-reason').textContent =
+        (latest.quality_reasons && latest.quality_reasons.length)
+          ? latest.quality_reasons.join(' · ')
+          : (latest.error_message || 'image failed quality check');
+      retake.style.display = 'flex';
+    } else {
+      retake.style.display = 'none';
+    }
+
     // Last updated
     document.getElementById('last-updated').textContent =
       'Updated ' + new Date().toLocaleTimeString();
@@ -404,7 +457,8 @@
     // Toast on new result
     if (data.results.length > lastResultCount && lastResultCount > 0) {
       const r = data.results[0];
-      showToast(`${r.filename} → ${r.status === 'ingested' ? '✅ Ingested' : r.status === 'duplicate' ? '⏩ Duplicate' : '❌ Error'}`);
+      const msg = { ingested: '✅ Ingested', duplicate: '⏩ Duplicate', rejected: '📸 Rejected — retake', error: '❌ Error', skipped: '— Skipped' }[r.status] || r.status;
+      showToast(`${r.filename} → ${msg}`);
     }
     lastResultCount = data.results.length;
 
@@ -427,6 +481,9 @@
 
     const rows = results.map(r => {
       const statusBadge = `<span class="badge badge-${r.status}">${statusIcon(r.status)} ${r.status}</span>`;
+      const reason = (r.status === 'rejected' && r.quality_reasons && r.quality_reasons.length)
+        ? `<div style="color:#fca5a5;font-size:11px;margin-top:2px;">${esc(r.quality_reasons.join(' · '))}</div>`
+        : '';
       const csBadge = r.carestack_status
         ? `<span class="badge badge-carestack-${r.carestack_status}">${csIcon(r.carestack_status)} ${r.carestack_status}</span>`
         : '';
@@ -440,7 +497,7 @@
         <td style="font-family:monospace;color:#93c5fd">${esc(r.filename)}</td>
         <td>${esc(r.patient_name || '—')}<br><small style="color:var(--subtext)">${esc(r.patient_id || '')}</small></td>
         <td>${esc(r.capture_date || '—')}</td>
-        <td>${statusBadge}</td>
+        <td>${statusBadge}${reason}${r.status === 'rejected' ? '<div style="margin-top:2px;">📸 Please retake</div>' : ''}</td>
         <td>${csBadge}</td>
         <td style="color:var(--subtext);font-size:11px">${time}</td>
       </tr>`;
@@ -525,7 +582,11 @@
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   function statusIcon(s) {
-    return { ingested: '✅', duplicate: '⏩', error: '❌', skipped: '—' }[s] || '';
+    return { ingested: '✅', duplicate: '⏩', rejected: '📸', error: '❌', skipped: '—' }[s] || '';
+  }
+
+  function dismissRetake() {
+    document.getElementById('retake-banner').style.display = 'none';
   }
 
   function csIcon(s) {

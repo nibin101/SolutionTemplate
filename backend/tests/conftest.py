@@ -6,10 +6,16 @@ fully isolated from each other and from the real inbox/outbox on disk.
 """
 
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageFilter
+
+# Allow imports from backend/
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from ingest import Config, QualityConfig, SessionEntry
 
 # ── Path fixtures ──────────────────────────────────────────────────────────
 
@@ -85,15 +91,72 @@ def sample_jpeg_unmatched(tmp_dirs):
     return path
 
 
+# ── Quality-gate image fixtures (textured, so blur variance is meaningful) ──
+
+def _checkerboard(width: int = 800, height: int = 600, cell: int = 50) -> Image.Image:
+    """A sharp checkerboard — strong edges → high Laplacian variance."""
+    import numpy as np
+
+    arr = np.zeros((height, width), dtype=np.uint8)
+    for y in range(0, height, cell):
+        for x in range(0, width, cell):
+            if ((x // cell) + (y // cell)) % 2 == 0:
+                arr[y : y + cell, x : x + cell] = 255
+    return Image.fromarray(arr).convert("RGB")
+
+
+@pytest.fixture()
+def sharp_jpeg(tmp_dirs):
+    """A sharp, high-detail image that must pass the blur check."""
+    path = tmp_dirs["inbox"] / "JOHN_01_frontal_repose.jpg"
+    _checkerboard().save(path, format="JPEG", quality=95)
+    return path
+
+
+@pytest.fixture()
+def blurry_jpeg(tmp_dirs):
+    """A heavily-blurred version of the sharp image — must fail blur."""
+    path = tmp_dirs["inbox"] / "JOHN_02_frontal_blurry.jpg"
+    _checkerboard().filter(ImageFilter.GaussianBlur(radius=10)).save(
+        path, format="JPEG", quality=95
+    )
+    return path
+
+
+@pytest.fixture()
+def occlusal_jpeg(tmp_dirs):
+    """
+    A sharp image with NO face, named as an intraoral view.
+    Face is not required for intraoral views → must still pass.
+    """
+    path = tmp_dirs["inbox"] / "JOHN_03_maxillary_occlusal.jpg"
+    _checkerboard().save(path, format="JPEG", quality=95)
+    return path
+
+
+@pytest.fixture()
+def face_jpeg():
+    """
+    A real frontal face photo (committed demo asset from the team, not patient
+    data). Used for the positive face-detection test. Skipped automatically if
+    the asset is missing.
+    """
+    path = Path(__file__).parent.parent / "demo_images" / "JOHN_01_frontal_repose.jpg"
+    if not path.exists():
+        pytest.skip("demo face image not available")
+    return path
+
+
 # ── Config fixture ─────────────────────────────────────────────────────────
 
 @pytest.fixture()
 def sample_config():
-    """A minimal Config object with two sessions (one active, one inactive)."""
-    import sys, os
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from ingest import Config, SessionEntry
+    """
+    A minimal Config object with two sessions (one active, one inactive).
 
+    The quality gate is DISABLED so core ingest tests focus on file handling.
+    Use `quality_config` / `sample_config_quality` for gate behaviour tests.
+    """
     return Config(
         practice_id="TEST-001",
         sessions=[
@@ -117,4 +180,32 @@ def sample_config():
         preview_max_px=256,    # small for fast tests
         preview_quality=80,
         supported_extensions=[".jpg", ".jpeg", ".cr2", ".nef"],
+        quality=QualityConfig(enabled=False),
     )
+
+
+@pytest.fixture()
+def quality_config():
+    """A QualityConfig with the gate fully enabled (default thresholds)."""
+    return QualityConfig(
+        enabled=True,
+        analysis_max_px=512,
+        blur_enabled=True,
+        blur_min_variance=60.0,
+        face_enabled=True,
+        min_face_px=20,
+    )
+
+
+@pytest.fixture()
+def sample_config_quality(sample_config):
+    """sample_config but with the quality gate ENABLED."""
+    sample_config.quality = QualityConfig(
+        enabled=True,
+        analysis_max_px=512,
+        blur_enabled=True,
+        blur_min_variance=60.0,
+        face_enabled=True,
+        min_face_px=20,
+    )
+    return sample_config

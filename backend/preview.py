@@ -65,6 +65,22 @@ def _open_with_rawpy(source: Path) -> Image.Image:
     return Image.fromarray(rgb_array)
 
 
+def decode_source(source: Path) -> Image.Image:
+    """
+    Decode an image file into a PIL Image object (auto-rotated, RGB).
+
+    Supports JPEG/PNG/TIFF via Pillow and RAW formats (CR2/CR3/NEF/ARW/ORF/RW2)
+    via rawpy. The source file is only ever *read* — never modified — which is
+    the base guarantee for both preview generation and quality analysis.
+    """
+    suffix = source.suffix.lower()
+
+    # Choose the right decoder based on extension
+    if suffix in _RAW_EXTENSIONS:
+        return _open_with_rawpy(source)
+    return _open_with_pillow(source)
+
+
 def generate_preview(
     source: Path,
     destination: Path,
@@ -89,13 +105,7 @@ def generate_preview(
     ------
     RuntimeError if the file cannot be opened (unsupported format or corrupt file).
     """
-    suffix = source.suffix.lower()
-
-    # Choose the right decoder based on extension
-    if suffix in _RAW_EXTENSIONS:
-        img = _open_with_rawpy(source)
-    else:
-        img = _open_with_pillow(source)
+    img = decode_source(source)
 
     # Resize — thumbnail() modifies in-place and respects aspect ratio
     img.thumbnail((max_px, max_px), resample=Image.LANCZOS)
