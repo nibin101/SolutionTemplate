@@ -39,8 +39,11 @@ to `folder` with the vendor's own tether utility; all three feed one pipeline.
 
 from __future__ import annotations
 
+import re
 import threading
+import time
 from ctypes import POINTER, c_ulong, c_wchar_p, cast, pointer
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from ..config import config
@@ -86,8 +89,77 @@ READ_BLOCK = 256 * 1024
 # Guard against a pathological card: no single folder should hold more than this.
 MAX_OBJECTS_PER_NODE = 5000
 
-# MTP enumeration is chatty; never poll a camera faster than this.
-MIN_POLL_SECONDS = 4.0
+# A safety floor, not a target. MTP enumeration is chatty - each sweep opens
+# the device, walks its tree and closes it again - so there is a rate past
+# which polling costs more than it gains. This used to sit at 4.0, which is
+# most of the time between pressing the shutter and seeing the photograph on
+# the chart, and it silently overrode a lower POLL_INTERVAL_SECONDS: a station
+# configured for 3s actually ran at 4s and nothing said so.
+#
+# The device is now held open across sweeps and announces new files through a
+# WPD event, so a sweep is just an enumeration and the poll is only a safety
+# net for devices that raise nothing. 0.25 keeps a silent device responsive
+# without hammering a chatty one.
+MIN_POLL_SECONDS = 0.25
+
+# Once a device is raising events, polling it hard is pure waste: the event is
+# what delivers the photograph promptly, and the poll is only there in case the
+# device goes quiet. Walking a phone's tree twice a second cost 53% of a core
+# on the test machine for nothing, so a device with a live subscription gets
+# swept on this much slower cadence instead.
+#
+# Walking a phone's whole tree costs around a second of CPU, so this interval
+# is most of the idle cost of the source: 6s measured 16.6% of a core, 20s
+# brings it near 5%. It is insurance, not the mechanism - with events live a
+# photograph is picked up the moment it is written, and this only bounds how
+# long a *missed* event could hide one. A clinic PC running all day should not
+# spend a sixth of a core asking a phone a question it already answers.
+EVENT_BACKSTOP_SECONDS = 20.0
+
+# Photographs land in one or two folders - DCIM/Camera on a phone, DCIM/100CANON
+# on a body - but a phone's tree also holds hundreds of folders belonging to
+# every app on it. Enumerating all of them is what a sweep actually costs (the
+# per-folder EnumObjects call, not the property reads), so once a folder has
+# produced an image the fast sweep looks only there. The whole tree is still
+# re-walked this often, to notice a new card, a new DCIM sub-folder, or a
+# camera that starts writing somewhere else.
+FULL_WALK_SECONDS = 20.0
+
+# Until a photograph has shown which folder to watch there is nothing to target,
+# so every sweep has to be a full walk. Doing that at the configured interval
+# would burn a fifth of a core before the first shot is even taken, so full
+# walks are spaced at least this far apart while bootstrapping. It also bounds
+# how long the very first photograph of a session can take to appear.
+BOOTSTRAP_WALK_SECONDS = 2.0
+
+# Folders worth watching before anything has been shot from them. Every camera
+# and phone writes into DCIM, then into a sub-folder named by the DCF standard
+# (100CANON, 100NIKON, 100ANDRO) or, on a phone, simply "Camera". Recognising
+# those on the first walk means the cheap targeted sweep is available from the
+# start, instead of only after the first photograph has taught it where to
+# look - which is the shot the clinician is most likely to be watching for.
+_DCF_FOLDER = re.compile(r"^\d{3}[A-Za-z0-9_]{1,5}$")
+_PHOTO_FOLDER_NAMES = {"dcim", "camera", "photo", "photos", "images"}
+
+
+def _looks_like_a_photo_folder(name: str) -> bool:
+    cleaned = (name or "").strip()
+    return cleaned.lower() in _PHOTO_FOLDER_NAMES or bool(_DCF_FOLDER.match(cleaned))
+
+
+@dataclass
+class _OpenDevice:
+    """One camera held open across sweeps, plus its event subscription."""
+
+    device: object
+    content: object
+    properties: object
+    name: str
+    #: Kept alive deliberately; COM holds a raw pointer to it.
+    sink: object | None = None
+    cookie: object | None = None
+    #: monotonic timestamp of the last full tree walk.
+    last_full: float = 0.0
 
 
 class WpdUnavailable(RuntimeError):
@@ -230,6 +302,24 @@ class WpdPtpSource(CaptureSource):
         # to fall outside a session. Anything in here is never read again,
         # which is what keeps watching a phone full of personal photos cheap.
         self._known: dict[str, set[str]] = {}
+        #: Object ids known to be folders/storage roots, per device. A folder's
+        #: *contents* change, which is why it can never go in `_known` - but its
+        #: type does not, and re-reading that over COM for every folder on the
+        #: phone on every sweep was most of the cost of a sweep.
+        self._containers: dict[str, set[str]] = {}
+        #: Folder ids that have actually yielded a photograph, per device. The
+        #: fast sweep looks only at these; see FULL_WALK_SECONDS.
+        self._hot: dict[str, set[str]] = {}
+        #: Cameras held open across sweeps - see `_acquire`.
+        self._devices: dict[str, _OpenDevice] = {}
+        #: Set by the device's own event callback the instant it writes a file,
+        #: which is what lets the loop react rather than wait out the poll.
+        self._wake = threading.Event()
+        #: Events actually *received*, not merely subscribed to. Advise()
+        #: succeeding proves only that the device accepted the subscription -
+        #: plenty accept it and then never raise anything - so the fast path is
+        #: earned by observation, never assumed.
+        self._events_seen = 0
 
     # -- COM plumbing ------------------------------------------------------
 
@@ -314,6 +404,94 @@ class WpdPtpSource(CaptureSource):
                 device.Close()
             except Exception:
                 pass
+
+    # -- holding the device open -------------------------------------------
+
+    def _acquire(self, pnp_id: str) -> "_OpenDevice":
+        """An open handle for this device, reused across sweeps.
+
+        Opening an MTP device is not cheap - it is a USB open plus a session
+        negotiation - and doing it once per poll is what forced the poll
+        interval to be measured in seconds. Held open, a sweep is just an
+        enumeration, so it can run far more often and a photograph reaches the
+        chart in a fraction of the time.
+        """
+        entry = self._devices.get(pnp_id)
+        if entry is not None:
+            return entry
+
+        device = self._open_device(pnp_id)
+        content = device.Content()
+        properties = content.Properties()
+        name = self._read_device_name(properties) or _short_pnp(pnp_id)
+        entry = _OpenDevice(device=device, content=content,
+                            properties=properties, name=name)
+        self._subscribe(entry)
+        self._devices[pnp_id] = entry
+        self.log.info("opened %s (events: %s)", name,
+                      "yes" if entry.cookie is not None else "polling only")
+        return entry
+
+    def _release(self, pnp_id: str) -> None:
+        """Let go of a handle - on error, or when the camera is unplugged."""
+        entry = self._devices.pop(pnp_id, None)
+        if entry is None:
+            return
+        try:
+            if entry.cookie is not None:
+                entry.device.Unadvise(entry.cookie)
+        except Exception:
+            pass
+        try:
+            entry.device.Close()
+        except Exception:
+            pass
+
+    def _release_all(self) -> None:
+        for pnp_id in list(self._devices):
+            self._release(pnp_id)
+
+    def _subscribe(self, entry: "_OpenDevice") -> None:
+        """Ask the device to announce new objects instead of being asked.
+
+        This is what removes the poll delay: WPD raises an event the moment the
+        camera commits a file, so the sweep runs then rather than up to a whole
+        interval later. Strictly an accelerator - devices differ wildly in what
+        they actually raise, so a refusal here is logged and ignored and the
+        poll below carries on doing the work by itself.
+        """
+        try:
+            import comtypes
+
+            api = self._api
+            wake = self._wake
+
+            source = self
+
+            class _ObjectAddedSink(comtypes.COMObject):
+                _com_interfaces_ = [api.IPortableDeviceEventCallback]
+
+                def OnEvent(self, _parameters):  # noqa: N802 - COM vtable name
+                    source._events_seen += 1
+                    if source._events_seen == 1:
+                        source.log.info(
+                            "device events are live - polling drops to the backstop"
+                        )
+                    wake.set()
+                    return 0
+
+            sink = _ObjectAddedSink()
+            parameters = self._cc.CreateObject(
+                self._types.PortableDeviceValues, interface=api.IPortableDeviceValues
+            )
+            # The sink must outlive this call - COM holds a raw pointer, and a
+            # collected callback is a crash rather than a missed photograph.
+            entry.sink = sink
+            entry.cookie = entry.device.Advise(0, sink, parameters)
+        except Exception as exc:
+            entry.sink = None
+            entry.cookie = None
+            self.log.info("device events unavailable (%s); polling only", exc)
 
     def _open_device(self, pnp_id: str):
         values = self._cc.CreateObject(
@@ -467,9 +645,23 @@ class WpdPtpSource(CaptureSource):
         # Each worker thread needs its own COM apartment.
         comtypes.CoInitialize()
         interval = max(config.poll_interval, MIN_POLL_SECONDS)
+        if config.poll_interval < MIN_POLL_SECONDS:
+            # Say so rather than quietly running slower than asked. Silently
+            # ignoring a configured value is how someone ends up convinced the
+            # setting does nothing.
+            self.log.warning(
+                "POLL_INTERVAL_SECONDS=%.1f is below the %.1fs floor for MTP; "
+                "polling every %.1fs", config.poll_interval, MIN_POLL_SECONDS, interval,
+            )
+        self.log.info("polling the camera every %.1fs (device events wake it sooner)",
+                      interval)
         self.note("scanning for cameras", available=True)
         try:
             while not stop_event.is_set():
+                # Cleared before the sweep, never after: an event that arrives
+                # while we are already walking the tree must still cause another
+                # pass, or the photograph that raised it waits for the poll.
+                self._wake.clear()
                 try:
                     self._sweep(emit, stop_event)
                 except WpdUnavailable as exc:
@@ -479,10 +671,36 @@ class WpdPtpSource(CaptureSource):
                     # A camera unplugged mid-transfer throws; log and keep going.
                     self.log.warning("sweep failed: %s", exc)
                     self.note(f"recovering: {exc}", available=True)
-                stop_event.wait(interval)
+
+                # Whichever comes first: the camera announcing a new file, or
+                # the poll falling due. A device that is raising events needs
+                # only a slow backstop; one that is silent has to be asked, so
+                # it keeps the configured interval.
+                if stop_event.wait(0):
+                    break
+                self._wake.wait(self._quiet_period(interval))
         finally:
+            self._release_all()
             comtypes.CoUninitialize()
             self.note("stopped", available=False)
+
+    def _quiet_period(self, interval: float) -> float:
+        """How long to wait before sweeping again, absent an event.
+
+        Every open device raising events means nothing is gained by asking -
+        the answer arrives on its own - so the sweep drops back to a backstop.
+        A single silent device pulls the whole loop back to the configured
+        interval, because that one has to be polled to be noticed.
+        """
+        if not self._devices or not self._events_seen:
+            # Nothing has ever announced itself, so asking is the only way to
+            # find out. This is the case that matters: a subscription the
+            # device accepted and never honours would otherwise leave a
+            # photograph sitting on the camera for a whole backstop period.
+            return interval
+        if all(e.cookie is not None for e in self._devices.values()):
+            return max(interval, EVENT_BACKSTOP_SECONDS)
+        return interval
 
     def _sweep(self, emit: Emit, stop_event: threading.Event) -> None:
         device_ids = self._device_ids()
@@ -490,39 +708,67 @@ class WpdPtpSource(CaptureSource):
             self.note("no camera connected", available=True, device=None)
             return
 
+        # Cameras that have gone away must not keep a handle (or an event
+        # subscription) alive behind them.
+        for gone in [p for p in self._devices if p not in device_ids]:
+            self.log.info("camera disconnected: %s", self._devices[gone].name)
+            self._release(gone)
+
         for pnp_id in device_ids:
             if stop_event.is_set():
                 return
             try:
-                device = self._open_device(pnp_id)
+                entry = self._acquire(pnp_id)
             except Exception as exc:
                 self.log.debug("cannot open %s: %s", _short_pnp(pnp_id), exc)
+                self._release(pnp_id)
                 continue
 
             try:
-                content = device.Content()
-                properties = content.Properties()
-                # The device is already open, so ask it its name directly rather
-                # than paying for a second connection.
-                name = self._read_device_name(properties) or _short_pnp(pnp_id)
                 known = self._known.setdefault(pnp_id, set())
-                pulled = self._walk(content, properties, "DEVICE", known,
-                                    name, emit, stop_event)
+                containers = self._containers.setdefault(pnp_id, set())
+                hot = self._hot.setdefault(pnp_id, set())
+                now = time.monotonic()
+
+                gap = FULL_WALK_SECONDS if hot else BOOTSTRAP_WALK_SECONDS
+                if now - entry.last_full >= gap:
+                    # The whole tree: finds a new card, a new DCIM sub-folder,
+                    # or a camera that has started writing somewhere else.
+                    pulled = self._walk(entry.content, entry.properties, "DEVICE",
+                                        known, containers, entry.name, emit,
+                                        stop_event, hot=hot)
+                    entry.last_full = now
+                elif hot:
+                    # Cheap sweep: one enumeration per folder that has actually
+                    # produced a photograph, instead of one per folder on the
+                    # device. This is what makes sub-second polling affordable.
+                    pulled = 0
+                    for folder in list(hot):
+                        pulled += self._walk(
+                            entry.content, entry.properties, folder, known,
+                            containers, entry.name, emit, stop_event,
+                            hot=hot, recurse=False,
+                        )
+                else:
+                    # Nothing to target yet and a full walk is not due; the
+                    # bootstrap gap above is what bounds the wait.
+                    pulled = 0
                 self.note(
-                    f"{name} - {self.window.describe()}"
+                    f"{entry.name} - {self.window.describe()}"
                     + (f", {pulled} taken this sweep" if pulled else ""),
                     available=True,
-                    device=name,
+                    device=entry.name,
                 )
-            finally:
-                try:
-                    device.Close()
-                except Exception:
-                    pass
+            except Exception:
+                # The handle may be stale (cable pulled mid-walk). Drop it so
+                # the next sweep opens a fresh one rather than failing forever.
+                self._release(pnp_id)
+                raise
 
     def _walk(self, content, properties, parent_id: str, known: set[str],
-              device_name: str, emit: Emit, stop_event: threading.Event,
-              depth: int = 0) -> int:
+              containers: set[str], device_name: str, emit: Emit,
+              stop_event: threading.Event, depth: int = 0,
+              hot: set[str] | None = None, recurse: bool = True) -> int:
         """Walk the device tree, transferring what the session window claims.
 
         `known` is the reason this stays cheap on a phone: a file judged once is
@@ -540,6 +786,17 @@ class WpdPtpSource(CaptureSource):
             if object_id in known:
                 continue
 
+            if object_id in containers:
+                # Already established as a folder; descend without paying for
+                # another property read. This is the hot path on a phone, where
+                # the great majority of objects walked are folders we have
+                # classified on a previous sweep.
+                if recurse:
+                    pulled += self._walk(content, properties, object_id, known,
+                                         containers, device_name, emit, stop_event,
+                                         depth + 1, hot, recurse)
+                continue
+
             try:
                 info = self._properties(properties, object_id)
             except Exception as exc:
@@ -553,9 +810,18 @@ class WpdPtpSource(CaptureSource):
 
             if not is_image and content_type in CONTAINER_CONTENT_TYPES:
                 # Storage roots, folders and anything of unknown type: descend.
-                # A folder id is not marked as seen, because its contents change.
-                pulled += self._walk(content, properties, object_id, known,
-                                     device_name, emit, stop_event, depth + 1)
+                # A folder id is not marked as seen, because its contents change
+                # - but its type is remembered so the next sweep skips this
+                # property read entirely.
+                containers.add(object_id)
+                if hot is not None and _looks_like_a_photo_folder(
+                    str(info.get("name") or info.get("filename") or "")
+                ):
+                    hot.add(object_id)
+                if recurse:
+                    pulled += self._walk(content, properties, object_id, known,
+                                         containers, device_name, emit, stop_event,
+                                         depth + 1, hot, recurse)
                 continue
 
             if not is_image:
@@ -588,5 +854,9 @@ class WpdPtpSource(CaptureSource):
                 )
             )
             self.count_capture()
+            # This folder produces photographs, so the fast sweep should look
+            # here rather than re-walking the whole device.
+            if hot is not None:
+                hot.add(parent_id)
             pulled += 1
         return pulled

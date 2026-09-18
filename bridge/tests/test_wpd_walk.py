@@ -93,7 +93,8 @@ def walk(source: FakeSource) -> list:
     """One sweep. Returns the images emitted."""
     emitted: list = []
     source._walk(FakeContent(), FakeContent(), "DEVICE",
-                 source._known.setdefault("dev", set()), "Test Camera",
+                 source._known.setdefault("dev", set()),
+                 source._containers.setdefault("dev", set()), "Test Camera",
                  emitted.append, threading.Event())
     return emitted
 
