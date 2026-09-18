@@ -18,12 +18,16 @@ const state = {
   captures: [],
   unassigned: [],
   // "live" follows the open capture session; "chart" shows one patient's
-  // record; "recent" shows everything charted lately, whoever it belongs to.
+  // record; "recent" shows everything charted lately, whoever it belongs to;
+  // "folders" browses the on-disk photo tree without leaving the browser.
   view: "live",
   chartPatient: null,
   chartImages: [],
   chartFolder: null,
   recentImages: [],
+  folderTree: [],
+  openFolderName: null,
+  openFolderDate: null,
 };
 
 const el = (id) => document.getElementById(id);
@@ -121,8 +125,8 @@ function assignControls(image) {
   const fragment = el("assign-template").content.cloneNode(true);
   const select = fragment.querySelector(".assign-select");
   const button = fragment.querySelector(".assign-button");
+  const message = fragment.querySelector(".assign-message");
 
-  select.innerHTML = '<option value="">Assign to...</option>';
   for (const patient of state.patients) {
     const option = document.createElement("option");
     option.value = patient.id;
@@ -130,21 +134,54 @@ function assignControls(image) {
     select.appendChild(option);
   }
 
+  // The button stays disabled until a patient is actually picked - clicking it
+  // with nothing chosen used to fail silently, which looked exactly like a
+  // broken assign button.
+  select.addEventListener("change", () => {
+    button.disabled = !select.value;
+  });
+
+  const showMessage = (text, kind) => {
+    message.textContent = text;
+    message.className = `assign-message ${kind}`;
+    message.hidden = false;
+  };
+
   button.addEventListener("click", async () => {
     if (!select.value) return;
+    const chosen = select.selectedOptions[0].textContent;
     button.disabled = true;
+    select.disabled = true;
+    button.textContent = "Assigning...";
+    message.hidden = true;
+
     try {
-      await api(`/api/images/${image.id}/assign`, {
+      const result = await api(`/api/images/${image.id}/assign`, {
         method: "POST",
         body: JSON.stringify({ patient_id: select.value }),
       });
+
+      if (result.warning) {
+        // The chart is correctly assigned; the file itself did not make it
+        // into the folder yet. Say so and offer to try the move again,
+        // rather than silently reporting success either way.
+        showMessage(result.warning, "warn");
+        button.textContent = "Retry filing";
+        button.disabled = false;
+        select.disabled = false;
+        return;
+      }
+
+      showMessage(`Assigned to ${chosen}.`, "ok");
       await refreshUnassigned();
       if (state.view === "chart" && state.chartPatient.id === select.value) {
         await openChart(state.chartPatient);
       }
     } catch (error) {
+      showMessage(`Could not assign: ${error.message}`, "error");
+      button.textContent = "Assign";
       button.disabled = false;
-      alert(`Could not assign that image: ${error.message}`);
+      select.disabled = false;
     }
   });
 
@@ -253,18 +290,32 @@ function renderSession() {
   const endButton = el("end-session");
   const live = state.view === "live";
   const chart = state.view === "chart";
+  const folders = state.view === "folders";
 
   banner.hidden = !live;
-  // Only the chart view has a chart banner to show - the recent view must not
-  // leave an empty one on screen.
+  // Only the chart view has a chart banner to show - the recent and folders
+  // views must not leave an empty one on screen.
   el("chart-banner").hidden = !chart;
   el("back-to-live").hidden = live;
   el("show-recent").hidden = !live;
+  el("show-folders").hidden = !live;
+  el("folder-breadcrumb").hidden = !folders;
+  if (!folders) {
+    // Which of these two is visible while browsing folders is decided by
+    // renderFolders() itself, since it depends on how deep into the tree the
+    // view currently is (roster, dates, or the photos in one date).
+    el("folder-list").hidden = true;
+    el("capture-grid").hidden = false;
+  }
   el("capture-title").textContent = live
     ? "Live capture"
     : chart
       ? "Patient record"
-      : "Recent captures";
+      : folders
+        ? "Photo folders"
+        : "Recent captures";
+
+  if (folders) el("capture-empty").hidden = true;
 
   if (!live) {
     endButton.hidden = true;
@@ -316,6 +367,8 @@ function renderChartBanner() {
 }
 
 function renderGrid() {
+  if (state.view === "folders") return; // renderFolders() owns this view
+
   const grid = el("capture-grid");
   const chart = state.view === "chart";
   const recent = state.view === "recent";
@@ -345,6 +398,148 @@ function renderUnassigned() {
   }
   el("unassigned-count").textContent = String(state.unassigned.length);
   el("unassigned-empty").hidden = state.unassigned.length > 0;
+}
+
+/* ---------------- folder browser ----------------
+ *
+ * The same tree the disk actually has - photos/<Name>_<Chart>/<date>/ - shown
+ * without opening Explorer. Three levels: the roster of folders, the dated
+ * sub-folders inside one, and the photographs inside one of those (which
+ * reuses the ordinary tile grid, so the lightbox works exactly as it does
+ * everywhere else).
+ *
+ * Deliberately not wired to the SSE stream: this is a browse-and-look-up view
+ * a clinician opens occasionally, not the live capture view, and updating a
+ * nested tree correctly from a single incoming image event is a lot of
+ * complexity for a view nobody is staring at during a shoot. Reopening it
+ * picks up anything new.
+ */
+
+function folderThumb(dates) {
+  for (const day of dates) {
+    const found = day.images.find((image) => image.thumb_url);
+    if (found) return found.thumb_url;
+  }
+  return null;
+}
+
+function folderRow(thumbUrl, name, count, onClick) {
+  const item = document.createElement("li");
+  item.className = "folder-row";
+
+  const thumb = document.createElement("span");
+  thumb.className = "folder-thumb";
+  if (thumbUrl) {
+    const img = document.createElement("img");
+    img.src = thumbUrl;
+    img.alt = "";
+    img.loading = "lazy";
+    thumb.appendChild(img);
+  }
+  item.appendChild(thumb);
+
+  const label = document.createElement("span");
+  label.className = "folder-label";
+  label.innerHTML = `<span class="folder-name">${name}</span>
+    <span class="folder-count">${count} photo${count === 1 ? "" : "s"}</span>`;
+  item.appendChild(label);
+
+  item.addEventListener("click", onClick);
+  return item;
+}
+
+function renderFolderBreadcrumb() {
+  const nav = el("folder-breadcrumb");
+  nav.innerHTML = "";
+
+  const root = document.createElement("a");
+  root.href = "#";
+  root.textContent = "All folders";
+  root.addEventListener("click", (event) => {
+    event.preventDefault();
+    openFolders();
+  });
+  nav.appendChild(root);
+
+  const folder = state.folderTree.find((f) => f.name === state.openFolderName);
+  if (folder) {
+    nav.append(" / ");
+    const link = document.createElement("a");
+    link.href = "#";
+    link.textContent = folder.display_name;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      state.openFolderDate = null;
+      renderFolders();
+    });
+    nav.appendChild(link);
+  }
+  if (state.openFolderDate) {
+    nav.append(" / ", state.openFolderDate);
+  }
+}
+
+function renderFolders() {
+  renderFolderBreadcrumb();
+  const list = el("folder-list");
+  const grid = el("capture-grid");
+  list.innerHTML = "";
+
+  const folder = state.folderTree.find((f) => f.name === state.openFolderName);
+
+  if (!folder) {
+    // Top level: the roster of folders.
+    list.hidden = false;
+    grid.hidden = true;
+    for (const entry of state.folderTree) {
+      list.appendChild(
+        folderRow(folderThumb(entry.dates), entry.display_name, entry.image_count, () => {
+          state.openFolderName = entry.name;
+          state.openFolderDate = null;
+          renderFolders();
+        }),
+      );
+    }
+    el("capture-empty").hidden = state.folderTree.length > 0;
+    el("capture-empty").textContent = "No photographs on file yet.";
+    return;
+  }
+
+  if (!state.openFolderDate) {
+    // One folder open: the dated sub-folders inside it.
+    list.hidden = false;
+    grid.hidden = true;
+    for (const day of folder.dates) {
+      const thumb = day.images.find((image) => image.thumb_url)?.thumb_url;
+      list.appendChild(
+        folderRow(thumb, day.date, day.images.length, () => {
+          state.openFolderDate = day.date;
+          renderFolders();
+        }),
+      );
+    }
+    return;
+  }
+
+  // A date open: the photographs themselves, via the ordinary tile grid.
+  list.hidden = true;
+  grid.hidden = false;
+  grid.innerHTML = "";
+  const day = folder.dates.find((d) => d.date === state.openFolderDate);
+  for (const image of day ? day.images : []) {
+    grid.appendChild(tile(image, {}));
+  }
+}
+
+async function openFolders() {
+  state.view = "folders";
+  state.chartPatient = null;
+  state.openFolderName = null;
+  state.openFolderDate = null;
+  state.folderTree = await api("/api/images/folders");
+  renderSession();
+  renderFolders();
+  renderPatients();
 }
 
 function renderBridge(status) {
@@ -538,6 +733,9 @@ async function boot() {
   el("back-to-live").addEventListener("click", backToLive);
   el("show-recent").addEventListener("click", () => {
     openRecent().catch((error) => alert(`Could not load recent captures: ${error.message}`));
+  });
+  el("show-folders").addEventListener("click", () => {
+    openFolders().catch((error) => alert(`Could not load the photo folders: ${error.message}`));
   });
   el("add-patient").addEventListener("submit", addPatient);
   el("show-add-patient").addEventListener("click", () => {

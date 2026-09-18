@@ -28,8 +28,10 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +39,8 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 from .config import settings
+
+log = logging.getLogger(__name__)
 
 THUMB_MAX_EDGE = 480
 
@@ -269,29 +273,61 @@ def store_image(data: bytes, filename: str, mime: str, folder: str) -> StoredIma
     )
 
 
-def move_image(current: Path, folder: str) -> Path:
-    """Re-file a photograph when it is assigned to (or moved between) patients.
+# A file freshly written to a patient's day folder can be briefly held open by
+# antivirus or the Windows search indexer scanning it - long enough that the
+# very next request (a clinician assigning it within a second of it appearing)
+# can lose the race. Retrying beats reporting a false success: a database row
+# pointing at a file that is still where it was beats one pointing nowhere, but
+# an assign that silently fails to move the file is worse than either.
+_MOVE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
 
-    Returns the new path, or the old one if the move fails - a database row
-    pointing at a file that is still where it was beats one pointing nowhere.
-    """
+
+@dataclass
+class MoveResult:
+    path: Path
+    #: True once the file is actually sitting in the target folder - whether it
+    #: was moved there just now, or was already there. False only means the
+    #: move was attempted and did not succeed.
+    moved: bool
+    error: str | None = None
+
+
+def move_image(current: Path, folder: str) -> MoveResult:
+    """Re-file a photograph when it is assigned to (or moved between) patients."""
     if not current.exists():
-        return current
+        log.warning("cannot move %s: source file is missing", current)
+        return MoveResult(current, moved=False, error=f"source file missing: {current}")
 
     directory = settings.image_dir / folder
     directory.mkdir(parents=True, exist_ok=True)
     if current.parent == directory:
-        return current
+        return MoveResult(current, moved=True)
 
     destination = _unique_path(directory, current.name)
-    try:
-        shutil.move(str(current), str(destination))
-    except OSError:
-        return current
+    last_error: OSError | None = None
+    for attempt, delay in enumerate((0.0, *_MOVE_RETRY_DELAYS)):
+        if delay:
+            time.sleep(delay)
+        try:
+            shutil.move(str(current), str(destination))
+        except OSError as exc:
+            last_error = exc
+            log.debug("move attempt %d for %s failed: %s", attempt + 1, current.name, exc)
+            continue
+        else:
+            last_error = None
+            break
+
+    if last_error is not None:
+        log.error(
+            "could not move %s into %s after %d attempt(s): %s",
+            current.name, directory, len(_MOVE_RETRY_DELAYS) + 1, last_error,
+        )
+        return MoveResult(current, moved=False, error=str(last_error))
 
     # Leave the tree tidy: an emptied day folder is noise in a file listing.
     try:
         current.parent.rmdir()
     except OSError:
         pass
-    return destination
+    return MoveResult(destination, moved=True)

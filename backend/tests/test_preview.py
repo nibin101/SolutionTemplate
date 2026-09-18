@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -17,8 +18,15 @@ from app.storage import PREVIEW_MAX_EDGE
 
 
 def _jpeg(width: int, height: int) -> bytes:
+    # Random noise, not a flat fill: the quality gate (app/quality.py) reads a
+    # solid colour as maximally blurry (zero edges) and would reject it before
+    # these tests ever reach the preview tier they are meant to check. Noise
+    # generates via numpy regardless of size, so this stays fast even at the
+    # 4032x3024 sizes these tests use to exercise the preview cap.
+    rng = np.random.default_rng(seed=width * 31 + height)
+    pixels = rng.integers(0, 256, size=(height, width, 3), dtype=np.uint8)
     buffer = io.BytesIO()
-    Image.new("RGB", (width, height), (140, 90, 95)).save(buffer, format="JPEG")
+    Image.fromarray(pixels, "RGB").save(buffer, format="JPEG", quality=90)
     return buffer.getvalue()
 
 

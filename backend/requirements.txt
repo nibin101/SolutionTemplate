@@ -5,6 +5,11 @@ python-multipart==0.0.20
 python-dotenv==1.0.1
 Pillow==11.1.0
 
+# Quality gate (app/quality.py): blur + face-presence check on incoming
+# captures. -headless because this runs on a server with no display.
+opencv-python-headless==4.14.0.94
+numpy==2.5.3
+
 # Dev / test only
 pytest==8.3.4
 httpx==0.28.1

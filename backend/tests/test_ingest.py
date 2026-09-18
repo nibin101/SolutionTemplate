@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 def post_image(client, auth, payload: bytes, **form):
@@ -114,8 +114,13 @@ def test_exif_capture_time_and_camera_are_read(client, auth):
     exif[0x0110] = "EOS R6"
     exif.get_ifd(0x8769)[0x9003] = "2026:09:18 10:30:00"
 
+    # A solid fill has no edges at all - the quality gate (app/quality.py)
+    # would read that as maximally blurry and reject it, so this needs the
+    # same real texture the `jpeg` fixture uses rather than a flat colour.
+    picture = Image.new("RGB", (48, 32), (10, 90, 160))
+    ImageDraw.Draw(picture).rectangle((8, 8, 39, 23), fill=(245, 245, 245))
     buffer = io.BytesIO()
-    Image.new("RGB", (48, 32), (10, 90, 160)).save(buffer, format="JPEG", exif=exif)
+    picture.save(buffer, format="JPEG", exif=exif)
 
     image = post_image(client, auth, buffer.getvalue()).json()["image"]
     assert image["camera_make"] == "Canon"

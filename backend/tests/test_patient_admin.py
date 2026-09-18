@@ -42,8 +42,11 @@ def test_photos_can_be_uploaded_to_a_patient(client, jpeg):
     response = client.post(
         f"/api/patients/{patient['id']}/images",
         files=[
-            ("files", ("frontal.jpg", jpeg((10, 20, 30)), "image/jpeg")),
-            ("files", ("occlusal.jpg", jpeg((200, 40, 60)), "image/jpeg")),
+            # Deliberately not named after a view (e.g. "frontal.jpg") - this
+            # test is about the upload mechanics, not the quality gate's view
+            # classification, and that name would trigger a face requirement.
+            ("files", ("shot-1.jpg", jpeg((10, 20, 30)), "image/jpeg")),
+            ("files", ("shot-2.jpg", jpeg((200, 40, 60)), "image/jpeg")),
         ],
     )
     assert response.status_code == 201

@@ -24,7 +24,7 @@ os.environ.setdefault("BRIDGE_TOKEN", "test-token")
 os.environ.setdefault("SERVE_FRONTEND", "false")
 
 from fastapi.testclient import TestClient  # noqa: E402
-from PIL import Image  # noqa: E402
+from PIL import Image, ImageDraw  # noqa: E402
 
 from app.db import init_db, session as db_session  # noqa: E402
 from app.main import app  # noqa: E402
@@ -42,11 +42,26 @@ TABLES = (
 
 @pytest.fixture()
 def jpeg():
-    """Factory for a real (tiny) JPEG - the ingest path decodes what it is given."""
+    """Factory for a real (tiny) JPEG - the ingest path decodes what it is given.
+
+    Drawn with a checkerboard rather than a flat fill: the quality gate
+    (app/quality.py) rejects a genuinely blurry photo by design, and a
+    solid-colour image has zero edges - it is the most "blurry" input that
+    exists. A pattern gives every generated test photo real, sharp edges so
+    quality screening does not have to be disabled for the rest of the suite
+    to mean what it says.
+    """
 
     def make(colour: tuple[int, int, int] = (200, 120, 120)) -> bytes:
+        image = Image.new("RGB", (64, 48), colour)
+        draw = ImageDraw.Draw(image)
+        contrast = tuple(255 - channel for channel in colour)
+        for y in range(0, 48, 8):
+            for x in range(0, 64, 8):
+                if (x // 8 + y // 8) % 2 == 0:
+                    draw.rectangle((x, y, x + 7, y + 7), fill=contrast)
         buffer = io.BytesIO()
-        Image.new("RGB", (64, 48), colour).save(buffer, format="JPEG")
+        image.save(buffer, format="JPEG")
         return buffer.getvalue()
 
     return make

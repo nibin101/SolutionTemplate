@@ -89,6 +89,25 @@ is the side that has to be right, never takes the bridge's word for it.
 Every ingest, assignment and reassignment is written to an append-only
 `audit_log` table holding ids only — never names.
 
+## Quality gate
+
+Before any of the above, every capture is screened by `app/quality.py`:
+
+- **Blur** — Laplacian variance on a downscaled in-memory copy. A flat or
+  motion-blurred photo scores near zero and is rejected before it is ever
+  written to disk.
+- **Face presence** — enforced only for views expected to show one (frontal,
+  smile, repose), never for an intraoral shot. Classification prefers the
+  capture's own `view` label when the source sent one — the simulator tags
+  each frame with the standard series ("Frontal retracted", "Right buccal"),
+  forwarded end to end for exactly this — and falls back to filename keywords
+  otherwise, since a real camera's own filename carries no such hint.
+
+A rejected capture is never stored, charted, or quarantined — it simply never
+happened, and the bridge's spool keeps the bytes and shows the reason, the same
+path as any other rejected upload, so it can be retaken. Both checks, and the
+keyword lists, are configured in `.env` — see `QUALITY_*` in `.env.example`.
+
 ## API
 
 | Method | Path | Purpose |

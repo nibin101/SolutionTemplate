@@ -89,3 +89,42 @@ def test_bad_token_keeps_the_image_and_says_why(spool):
 
     assert spool.stats()["pending"] == 1
     assert "BRIDGE_TOKEN" in (uploader.last_error or "")
+
+
+def test_view_is_forwarded_when_the_source_provides_one(spool):
+    """The simulator tags each shot with its view ("Frontal retracted", ...) -
+    the backend's quality gate needs it to tell an extraoral shot from an
+    intraoral one without guessing from the filename, which a real camera
+    never names usefully for that."""
+    sent = {}
+
+    def responder(url, **kwargs):
+        sent["form"] = kwargs["data"]
+        return FakeResponse(200, {"status": "stored", "image": {"id": "abc"}})
+
+    uploader = make_uploader(spool, responder)
+    spool.enqueue(
+        CapturedImage(
+            filename="SIM_0001.JPG", data=b"bytes", source="simulator",
+            extra={"view": "Frontal retracted"},
+        )
+    )
+    uploader._deliver(spool.due_items()[0])
+
+    assert sent["form"]["view"] == "Frontal retracted"
+
+
+def test_view_is_simply_absent_when_the_source_has_none(spool):
+    """A real DSLR carries no view label - the form must not send an empty
+    or placeholder value for a field the backend treats as optional."""
+    sent = {}
+
+    def responder(url, **kwargs):
+        sent["form"] = kwargs["data"]
+        return FakeResponse(200, {"status": "stored", "image": {"id": "abc"}})
+
+    uploader = make_uploader(spool, responder)
+    enqueue(spool)  # no `view` in extra
+    uploader._deliver(spool.due_items()[0])
+
+    assert "view" not in sent["form"]

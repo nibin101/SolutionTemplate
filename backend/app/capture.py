@@ -17,6 +17,7 @@ from typing import Any
 from .config import settings
 from .db import audit, session as db_session, utcnow
 from .events import broker
+from .quality import assess_image
 from .serializers import image_to_dict
 from .storage import folder_for, sha256_hex, store_image
 
@@ -104,6 +105,7 @@ def chart_capture(
     camera_model: str | None = None,
     patient_id: str | None = None,
     expected_hash: str | None = None,
+    view: str | None = None,
 ) -> dict[str, Any]:
     """Store one photograph and attach it to a patient, if we can tell which.
 
@@ -111,6 +113,12 @@ def chart_capture(
     said who it belongs to. Left None, the patient is derived from the capture
     session open in `operatory` - and if there is none, the image is quarantined
     rather than guessed onto a chart.
+
+    `view` is the shot's own label when the source knows it (the simulator
+    tags each frame - "Frontal retracted", "Right buccal" - the standard dental
+    photography series), used by the quality gate to decide whether a face is
+    expected; a real camera filename carries no such thing, so it falls back to
+    filename keywords when `view` is absent.
     """
     if not data:
         return {"status": "rejected", "reason": "empty file"}
@@ -134,6 +142,24 @@ def chart_capture(
         ).fetchone()
         if existing is not None:
             return {"status": "duplicate", "image": image_to_dict(existing)}
+
+        # Quality gate: blur and (for extraoral views) a visible face. Runs
+        # before storage or patient resolution - a rejected image is never
+        # written to disk, never charted, and never quarantined for review;
+        # it was simply not a usable clinical photograph.
+        if settings.quality.enabled:
+            quality = assess_image(data, filename, settings.quality, view)
+            if not quality.passed:
+                reason = "; ".join(quality.reasons)
+                audit(conn, actor=actor, action="ingest.rejected", detail=reason)
+                return {
+                    "status": "rejected",
+                    "reason": reason,
+                    "quality": {
+                        "blur_score": quality.blur_score,
+                        "faces_detected": quality.faces_detected,
+                    },
+                }
 
         if patient_id:
             patient = conn.execute(

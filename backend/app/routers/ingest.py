@@ -35,6 +35,7 @@ async def ingest_image(
     camera_make: str | None = Form(None),
     camera_model: str | None = Form(None),
     content_hash: str | None = Form(None),
+    view: str | None = Form(None),
 ):
     data = await file.read()
 
@@ -53,4 +54,5 @@ async def ingest_image(
         camera_make=camera_make,
         camera_model=camera_model,
         expected_hash=content_hash,
+        view=view,
     )

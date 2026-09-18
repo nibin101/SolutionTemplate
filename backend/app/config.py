@@ -8,6 +8,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .quality import QualityConfig
+
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 REPO_DIR = BACKEND_DIR.parent
 
@@ -21,6 +23,13 @@ def _bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _csv(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
 @dataclass(frozen=True)
 class Settings:
     bridge_token: str
@@ -29,6 +38,7 @@ class Settings:
     port: int
     serve_frontend: bool
     quarantine_unassigned: bool
+    quality: QualityConfig
 
     @property
     def db_path(self) -> Path:
@@ -66,6 +76,23 @@ def load_settings() -> Settings:
         port=int(os.getenv("PORT", "8000")),
         serve_frontend=_bool("SERVE_FRONTEND", True),
         quarantine_unassigned=_bool("QUARANTINE_UNASSIGNED", True),
+        quality=QualityConfig(
+            enabled=_bool("QUALITY_GATE_ENABLED", True),
+            analysis_max_px=int(os.getenv("QUALITY_ANALYSIS_MAX_PX", "512")),
+            blur_enabled=_bool("QUALITY_BLUR_ENABLED", True),
+            blur_min_variance=float(os.getenv("QUALITY_BLUR_MIN_VARIANCE", "60.0")),
+            face_enabled=_bool("QUALITY_FACE_ENABLED", True),
+            face_required_keywords=_csv(
+                "QUALITY_FACE_REQUIRED_KEYWORDS",
+                ("frontal", "smile", "repose", "face", "extraoral"),
+            ),
+            face_optional_keywords=_csv("QUALITY_FACE_OPTIONAL_KEYWORDS", ("profile",)),
+            intraoral_override_keywords=_csv(
+                "QUALITY_INTRAORAL_OVERRIDE_KEYWORDS",
+                ("retracted", "occlusal", "buccal", "lingual", "palatal", "intraoral"),
+            ),
+            min_face_px=int(os.getenv("QUALITY_MIN_FACE_PX", "20")),
+        ),
     )
     settings.image_dir.mkdir(parents=True, exist_ok=True)
     settings.thumb_dir.mkdir(parents=True, exist_ok=True)

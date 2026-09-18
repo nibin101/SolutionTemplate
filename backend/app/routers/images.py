@@ -11,7 +11,7 @@ from ..db import audit, session as db_session
 from ..events import broker
 from ..schemas import AssignIn
 from ..serializers import image_to_dict
-from ..storage import folder_for, move_image
+from ..storage import UNASSIGNED_FOLDER, date_folder, folder_for, move_image, patient_folder
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 
@@ -30,6 +30,61 @@ def unassigned_images():
             "SELECT * FROM images WHERE status='unassigned' ORDER BY received_at DESC"
         ).fetchall()
     return [image_to_dict(r) for r in rows]
+
+
+@router.get("/folders")
+def folder_tree():
+    """The on-disk photo tree, viewable from the browser instead of Explorer.
+
+    Grouped exactly the way `storage.folder_for` names a folder when it writes
+    a file there - by patient (or `_unassigned`) and capture date - so what is
+    shown here can never drift from what is actually on disk. Built from the
+    database rather than a filesystem walk for the same reason `/recent`
+    already is: every entry then carries a real id, so its thumbnail, preview
+    and lightbox all work with no special-casing.
+    """
+    with db_session() as conn:
+        rows = conn.execute(
+            """
+            SELECT i.*, p.chart_number, p.first_name, p.last_name
+            FROM images i LEFT JOIN patients p ON p.id = i.patient_id
+            ORDER BY i.captured_at DESC, i.received_at DESC
+            """
+        ).fetchall()
+
+    folders: dict[str, dict] = {}
+    for row in rows:
+        if row["patient_id"]:
+            name = patient_folder(row["chart_number"], row["first_name"], row["last_name"])
+            display_name = f"{row['first_name']} {row['last_name']} ({row['chart_number']})"
+            sort_key = (row["last_name"] or "", row["first_name"] or "")
+        else:
+            name = UNASSIGNED_FOLDER
+            display_name = "Needs assignment"
+            sort_key = None  # pinned last, regardless of name
+
+        folder = folders.setdefault(
+            name,
+            {"name": name, "patient_id": row["patient_id"],
+             "display_name": display_name, "sort_key": sort_key, "dates": {}},
+        )
+        day = date_folder(row["captured_at"])
+        bucket = folder["dates"].setdefault(day, {"date": day, "images": []})
+        bucket["images"].append(image_to_dict(row))
+
+    ordered = sorted(
+        folders.values(), key=lambda f: (f["sort_key"] is None, f["sort_key"] or ("", ""))
+    )
+    return [
+        {
+            "name": f["name"],
+            "patient_id": f["patient_id"],
+            "display_name": f["display_name"],
+            "image_count": sum(len(d["images"]) for d in f["dates"].values()),
+            "dates": sorted(f["dates"].values(), key=lambda d: d["date"], reverse=True),
+        }
+        for f in ordered
+    ]
 
 
 @router.get("/recent")
@@ -114,23 +169,38 @@ def assign_image(image_id: str, payload: AssignIn):
 
         # Re-file the photograph so the folder tree matches the chart. Done
         # before the row is updated: if the move fails we keep pointing at the
-        # file that is actually there.
+        # file that is actually there, and the ownership change still lands -
+        # a chart pointing at the right patient with a slow-to-move file beats
+        # one that silently never got assigned at all.
         target_patient = conn.execute(
             "SELECT * FROM patients WHERE id=?", (patient_id,)
         ).fetchone()
-        new_path = move_image(
+        result = move_image(
             Path(row["stored_path"]), folder_for(target_patient, row["captured_at"])
         )
 
         conn.execute(
             "UPDATE images SET session_id=?, patient_id=?, status='assigned',"
             " stored_path=?, filename=? WHERE id=?",
-            (session_id, patient_id, str(new_path), new_path.name, image_id),
+            (session_id, patient_id, str(result.path), result.path.name, image_id),
         )
-        audit(conn, actor="ui", action="image.assign", subject=image_id,
-              detail=f"from={previous or 'unassigned'} to={patient_id}")
+        detail = f"from={previous or 'unassigned'} to={patient_id}"
+        if not result.moved:
+            detail += f" (file move failed: {result.error})"
+        audit(conn, actor="ui", action="image.assign", subject=image_id, detail=detail)
         row = _load(conn, image_id)
         data = image_to_dict(row)
+
+    if not result.moved:
+        # The chart is correct; the file on disk is not filed under the
+        # patient's folder yet. Say so, rather than a silent, misleading
+        # success - a clinician acting on "this is filed" needs to know when
+        # it is not actually true yet.
+        data["warning"] = (
+            "Assigned to the patient, but the file could not be moved into "
+            "their folder yet (it may be locked by another program). It will "
+            "stay findable by this record; try again shortly to re-file it."
+        )
 
     broker.publish("image.assigned", data)
     return data

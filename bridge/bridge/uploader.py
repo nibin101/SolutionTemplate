@@ -62,7 +62,12 @@ class Uploader(threading.Thread):
         }
         # captured_at is the field the backend routes on - it is how a
         # photograph finds the patient who was in the chair when it was taken.
-        for key in ("captured_at", "camera_make", "camera_model"):
+        # view is the source's own label for the shot (the simulator tags each
+        # frame with the standard series - "Frontal retracted", "Right
+        # buccal") - forwarded so the backend's quality gate can tell an
+        # extraoral shot from an intraoral one without guessing from the
+        # filename, which a real camera never names usefully for that.
+        for key in ("captured_at", "camera_make", "camera_model", "view"):
             if meta.get(key):
                 form[key] = meta[key]
 

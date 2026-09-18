@@ -65,6 +65,9 @@
         <div class="panel-head">
           <h2 id="capture-title">Live capture</h2>
           <div class="panel-actions">
+            <button id="show-folders" class="btn btn-ghost btn-small">
+              Browse folders
+            </button>
             <button id="show-recent" class="btn btn-ghost btn-small">
               Recent captures
             </button>
@@ -82,6 +85,12 @@
 
         <div id="chart-banner" class="session-banner chart" hidden></div>
 
+        <!-- The same on-disk tree `photos/<Name>_<Chart>/<date>/` shown without
+             leaving the browser: a roster of folders, then the dated folders
+             inside one, then the photographs inside one of those. -->
+        <nav id="folder-breadcrumb" class="folder-breadcrumb" hidden></nav>
+        <ul id="folder-list" class="folder-list" hidden></ul>
+
         <div id="capture-grid" class="grid"></div>
         <p id="capture-empty" class="empty">
           Nothing captured yet in this session. Take a photo - it appears here on its own.
@@ -98,7 +107,7 @@
         <p class="hint">
           Photos that arrived while no session was open. They are never guessed onto a chart.
         </p>
-        <div id="unassigned-grid" class="grid small"></div>
+        <div id="unassigned-grid" class="grid review"></div>
         <p id="unassigned-empty" class="empty">Nothing waiting. Every capture is charted.</p>
       </section>
     </main>
@@ -111,8 +120,11 @@
 
     <template id="assign-template">
       <div class="assign">
-        <select class="assign-select"></select>
-        <button class="btn btn-small assign-button">Assign</button>
+        <select class="assign-select">
+          <option value="">Who is this?</option>
+        </select>
+        <button class="btn assign-button" disabled>Assign</button>
+        <p class="assign-message" hidden></p>
       </div>
     </template>
 
