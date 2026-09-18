@@ -10,8 +10,8 @@
 | **Team Name:**    | CJD                                                 |
 | **Team Members:** | Ajo Jose · Woitiwe Simson · Alan Joy · Nibin Thomas|
 | **Institution:**  | CET                                                 |
-| **Live Demo:**    | [Demo link goes here]                               |
-| **Pitch Video:**  | [Social media pitch video link]                     |
+| **Live Demo:**    | http://127.0.0.1:8000/                              |
+| **Pitch Video:**  |https://www.instagram.com/reel/Ddb2aaxyv3g/?stkn=aGRqdWNuZDRwbHZo                |
 
 ---
 
@@ -323,10 +323,12 @@ _This doubles as the live demo runbook (3–5 min)._
 
 ## Team
 
-| Name     | Role(s)                         | GitHub    | Email   |
-| -------- | ------------------------------- | --------- | ------- |
-| [Name 1] | [e.g. Full-stack / ML / Design] | [@handle] | [email] |
-| [Name 2] |                                 |           |         |
+| Name          | Role(s)                         | GitHub                              |
+| --------      | ------------------------------- | ---------                           |
+| Ajo Jose      | Front end developer             |  https://github.com/AjoJosee        | 
+| Alan Joy      | Back end developer              |  https://github.com/awaken-soul     | 
+|Nibin Thomas   | Full stack  developer           |  https://github.com/nibin101        | 
+| Woitwe Simson |  Programmer                     |  https://github.com/Gotamantium-Core| 
 
 ---
 
