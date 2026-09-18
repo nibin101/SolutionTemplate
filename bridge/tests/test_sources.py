@@ -102,3 +102,42 @@ def test_canon_adapter_reports_a_missing_sdk_clearly():
     # Without EDSDK.dll configured this must degrade, not crash the bridge.
     if not available:
         assert "CANON_EDSDK_DLL" in detail or "EDSDK" in detail
+
+
+# --- status reporting ------------------------------------------------------
+
+def _probe_source():
+    from bridge.sources.base import CaptureSource
+
+    class _Probe(CaptureSource):
+        name = "probe"
+
+        def run(self, stop_event, emit):  # pragma: no cover - not exercised
+            raise NotImplementedError
+
+    return _Probe()
+
+
+def test_note_leaves_the_device_alone_when_not_given():
+    source = _probe_source()
+    source.note("scanning", available=True, device="Canon EOS 90D")
+    source.note("last capture: IMG_1.JPG", available=True)
+    assert source.status().device == "Canon EOS 90D"
+
+
+def test_note_clears_the_device_when_told_to():
+    """'No camera connected' must not keep advertising the last one.
+
+    The status bar read "Camera ready - <last phone>" with nothing plugged in,
+    because None meant both 'not supplied' and 'clear it'.
+    """
+    source = _probe_source()
+    source.note("scanning", available=True, device="Nothing A142")
+    source.note("no camera connected", available=True, device=None)
+    assert source.status().device is None
+
+
+def test_note_can_set_a_device():
+    source = _probe_source()
+    source.note("connected", available=True, device="Nikon Z6")
+    assert source.status().device == "Nikon Z6"

@@ -6,13 +6,20 @@
  * on the handset, nothing is copied by hand, and no file has to be dropped
  * somewhere for a watcher to notice.
  *
- * Routing matches the USB bridge exactly: the phone says which room it is in,
- * and the server decides which patient that means. Choosing a patient here
- * overrides that for the shots that follow.
+ * Routing matches the USB bridge exactly: the room decides which patient is in
+ * the chair, and the server owns that mapping. Choosing a patient here
+ * overrides it for the shots that follow.
+ *
+ * The room is not asked for. It comes from the camera bridge on the practice
+ * PC, which is configured for exactly one operatory and is the only thing that
+ * knows which room the practice is actually running. A picker here could only
+ * disagree with it, and a phone pointed at an empty room reports "nobody in the
+ * chair" and holds every photo for review - which looks identical to the system
+ * being broken.
  */
 
 const state = {
-  operatory: localStorage.getItem("snapchart.operatory") || "OP-1",
+  operatory: "OP-1",
   patients: [],
   // ?patient=<id> locks this phone to one patient - that is how the chair-side
   // view hands off when no camera is plugged into the PC.
@@ -60,7 +67,20 @@ function renderTarget() {
     `No session open in ${state.operatory}. Photos will be held for review, not charted.`;
 }
 
+/** Follow whichever room the bridge on the practice PC says it is in. */
+async function refreshOperatory() {
+  try {
+    const status = await getJSON("/api/bridge/status");
+    if (status && status.operatory) state.operatory = status.operatory;
+  } catch {
+    // Bridge unreachable or not running: keep the default. The session lookup
+    // below is what actually decides whether anything gets charted, and it
+    // reports its own failure.
+  }
+}
+
 async function refreshTarget() {
+  await refreshOperatory();
   try {
     state.session = await getJSON(
       `/api/sessions/active?operatory=${encodeURIComponent(state.operatory)}`,
@@ -75,7 +95,7 @@ async function refreshTarget() {
 
 function setLink(online) {
   const line = el("link-state");
-  line.textContent = online ? `Connected - ${state.operatory}` : "Cannot reach the practice PC";
+  line.textContent = online ? "Connected" : "Cannot reach the practice PC";
   line.className = online ? "ok" : "bad";
 }
 
@@ -177,14 +197,6 @@ function handleFiles(input) {
 /* ---------------- boot ---------------- */
 
 async function boot() {
-  const operatory = el("operatory");
-  operatory.value = state.operatory;
-  operatory.addEventListener("change", () => {
-    state.operatory = operatory.value;
-    localStorage.setItem("snapchart.operatory", state.operatory);
-    refreshTarget();
-  });
-
   el("patient-override").addEventListener("change", (event) => {
     state.override = event.target.value;
     renderTarget();

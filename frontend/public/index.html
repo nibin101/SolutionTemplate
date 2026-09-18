@@ -17,18 +17,48 @@
       </div>
 
       <div class="topbar-right">
-        <label class="operatory">
-          Operatory
-          <select id="operatory">
-            <option>OP-1</option>
-            <option>OP-2</option>
-            <option>OP-3</option>
-          </select>
-        </label>
-        <a class="btn btn-ghost btn-small" href="./capture.html" target="_blank"
-           title="Open this on a phone to send photos straight into the chart">
-          Phone capture
-        </a>
+        <!-- Photos that arrived with no session open. Out of the way until
+             there are some, like any other inbox, but the count is always on
+             screen: a capture nobody charts is the one thing that must not be
+             quietly forgotten. -->
+        <div class="inbox">
+          <button
+            id="inbox-toggle"
+            class="inbox-button"
+            type="button"
+            aria-expanded="false"
+            aria-controls="inbox-panel"
+            title="Captures waiting to be assigned to a patient"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="inbox-icon">
+              <path
+                d="M3 13h4l2 3h6l2-3h4M3 13l3-8h12l3 8v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span class="sr-only">Needs assignment</span>
+            <span id="unassigned-count" class="inbox-badge" hidden>0</span>
+          </button>
+
+          <section id="inbox-panel" class="inbox-panel" hidden aria-label="Needs assignment">
+            <div class="inbox-head">
+              <h2>Needs assignment</h2>
+              <button id="inbox-close" class="inbox-close" type="button" aria-label="Close">
+                &times;
+              </button>
+            </div>
+            <p class="hint">
+              Photos that arrived while no session was open.
+            </p>
+            <div id="unassigned-grid" class="grid review"></div>
+            <p id="unassigned-empty" class="empty">Nothing waiting. Every capture is charted.</p>
+          </section>
+        </div>
+
         <div class="bridge-status" id="bridge-status" title="Camera bridge status">
           <span class="dot" id="bridge-dot"></span>
           <span id="bridge-text">Checking camera link...</span>
@@ -40,14 +70,23 @@
       <section class="panel patients">
         <div class="panel-head">
           <h2>Patients</h2>
-          <button id="show-add-patient" class="btn btn-small">Add patient</button>
+          <button id="show-add-patient" class="btn btn-small" type="button" aria-expanded="false"
+                  aria-controls="add-patient">
+            Add patient
+          </button>
         </div>
 
+        <!-- Collapsed to nothing until Add patient is pressed: the day-to-day
+             job here is finding someone already on the list, not typing a new
+             one in. -->
         <form id="add-patient" class="add-patient" hidden>
           <input name="chart_number" placeholder="Chart no. (e.g. CS-1005)" required />
           <input name="first_name" placeholder="First name" required />
           <input name="last_name" placeholder="Last name" required />
-          <input name="date_of_birth" type="date" placeholder="Date of birth" />
+          <label class="field-label">
+            Date of birth
+            <input name="date_of_birth" type="date" />
+          </label>
           <div class="add-patient-actions">
             <button type="submit" class="btn btn-small">Save</button>
             <button type="button" id="cancel-add-patient" class="btn btn-small btn-ghost">
@@ -74,7 +113,6 @@
             <button id="back-to-live" class="btn btn-ghost btn-small" hidden>
               Back to live capture
             </button>
-            <button id="end-session" class="btn btn-ghost btn-small" hidden>End session</button>
           </div>
         </div>
 
@@ -95,20 +133,6 @@
         <p id="capture-empty" class="empty">
           Nothing captured yet in this session. Take a photo - it appears here on its own.
         </p>
-      </section>
-
-      <section class="panel review">
-        <div class="panel-head">
-          <h2>
-            Needs assignment
-            <span id="unassigned-count" class="badge">0</span>
-          </h2>
-        </div>
-        <p class="hint">
-          Photos that arrived while no session was open. They are never guessed onto a chart.
-        </p>
-        <div id="unassigned-grid" class="grid review"></div>
-        <p id="unassigned-empty" class="empty">Nothing waiting. Every capture is charted.</p>
       </section>
     </main>
 

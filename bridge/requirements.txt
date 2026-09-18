@@ -14,5 +14,9 @@ pywin32==308; sys_platform == "win32"
 # Background tray UI
 pystray==0.19.5
 
+# FTP receiver for Wi-Fi cameras (the "ftp" source). Canon R / Nikon Z / Sony
+# Alpha / Fujifilm bodies push each frame straight to it, no vendor software.
+pyftpdlib==2.0.1
+
 # Dev / test only
 pytest==8.3.4

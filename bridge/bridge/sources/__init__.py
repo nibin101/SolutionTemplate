@@ -39,6 +39,12 @@ def _shell() -> CaptureSource:
     return ShellMtpSource()
 
 
+def _ftp() -> CaptureSource:
+    from .ftp_receive import FtpReceiveSource
+
+    return FtpReceiveSource()
+
+
 def _simulator() -> CaptureSource:
     from .simulator import SimulatorSource
 
@@ -68,6 +74,7 @@ BUILDERS: dict[str, Callable[[], CaptureSource]] = {
     "shell": _shell,
     "folder": _folder,
     "removable": _removable,
+    "ftp": _ftp,
     "simulator": _simulator,
     "canon": _canon,
     "nikon": _nikon,

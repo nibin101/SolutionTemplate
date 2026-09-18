@@ -128,3 +128,56 @@ def test_view_is_simply_absent_when_the_source_has_none(spool):
     uploader._deliver(spool.due_items()[0])
 
     assert "view" not in sent["form"]
+
+
+def test_a_quality_rejection_is_not_a_transfer_failure(spool):
+    """A declined frame reached the backend; that is an answer, not a failure.
+
+    It used to be parked in the failed bucket, which put a permanent red
+    "1 transfer(s) failed" in the chair-side status bar for a blurred photo
+    nothing would ever accept, and made "Retry failed" re-send it forever.
+    """
+    def responder(url, **kwargs):
+        return FakeResponse(
+            200,
+            {"status": "rejected", "reason": "photo is blurry (sharpness 36.9 below 60.0)"},
+        )
+
+    uploader = make_uploader(spool, responder)
+    enqueue(spool)
+    uploader._deliver(spool.due_items()[0])
+
+    stats = spool.stats()
+    assert stats["failed"] == 0, "a rejection must not show up as a failed transfer"
+    assert stats["pending"] == 0, "and it must not sit in the queue either"
+    assert uploader.last_error is None
+
+
+def test_a_rejected_frame_is_never_uploaded_again(spool):
+    """The verdict is remembered, so retrying cannot resurrect it."""
+    calls = []
+
+    def responder(url, **kwargs):
+        calls.append(url)
+        return FakeResponse(200, {"status": "rejected", "reason": "lens cap"})
+
+    uploader = make_uploader(spool, responder)
+    enqueue(spool)
+    uploader._deliver(spool.due_items()[0])
+
+    assert spool.retry_failed() == 0, "nothing should be left to retry"
+    enqueue(spool)  # the same bytes arriving again
+    assert spool.due_items() == [], "dedupe should recognise the decided frame"
+    assert len(calls) == 1
+
+
+def test_a_real_transfer_failure_still_shows_up(spool):
+    """The signal has to survive: an unreadable blob is still a failure."""
+    def responder(url, **kwargs):
+        return FakeResponse(413, text="payload too large")
+
+    uploader = make_uploader(spool, responder)
+    enqueue(spool)
+    uploader._deliver(spool.due_items()[0])
+
+    assert spool.stats()["failed"] == 1

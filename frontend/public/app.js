@@ -104,6 +104,8 @@ function tile(image, { assignable = false, withDate = false, withPatient = false
     node.appendChild(placeholder);
   }
 
+  node.appendChild(deleteButton(image));
+
   const meta = document.createElement("figcaption");
   meta.className = "tile-meta";
   const when = withDate ? `${dateOf(image)} ${timeOf(image)}` : timeOf(image);
@@ -119,6 +121,80 @@ function tile(image, { assignable = false, withDate = false, withPatient = false
 
   if (assignable) node.appendChild(assignControls(image));
   return node;
+}
+
+/*
+ * Every capture carries its own delete control.
+ *
+ * Cameras fire off lens caps, blurred frames and accidental shots, and a chart
+ * padded with those is a chart nobody scrolls. It asks first, by file name -
+ * this removes the photograph from disk as well as from the chart, and there
+ * is no undo.
+ */
+function deleteButton(image) {
+  const button = document.createElement("button");
+  button.className = "tile-delete";
+  button.type = "button";
+  button.title = "Delete this capture";
+  button.setAttribute("aria-label", `Delete ${image.filename}`);
+  button.innerHTML = "&times;";
+
+  button.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const owner = patientNameFor(image);
+    const confirmed = window.confirm(
+      `Delete ${image.filename}${owner ? ` from ${owner}'s record` : ""}?\n\n` +
+        "The photograph is removed from the chart and from disk. This cannot be undone.",
+    );
+    if (!confirmed) return;
+
+    button.disabled = true;
+    try {
+      await api(`/api/images/${image.id}`, { method: "DELETE" });
+      // The server broadcasts image.deleted too, but this tab must not wait on
+      // its own round trip to show that the tile has gone.
+      forgetImage(image.id);
+    } catch (error) {
+      button.disabled = false;
+      alert(`Could not delete this capture: ${error.message}`);
+    }
+  });
+
+  return button;
+}
+
+/** Drop a deleted capture out of every list it could be sitting in. */
+function forgetImage(imageId) {
+  const without = (images) => images.filter((image) => image.id !== imageId);
+  state.captures = without(state.captures);
+  state.chartImages = without(state.chartImages);
+  state.recentImages = without(state.recentImages);
+
+  const waiting = state.unassigned.length;
+  state.unassigned = without(state.unassigned);
+  if (state.unassigned.length !== waiting) renderUnassigned();
+
+  for (const folder of state.folderTree) {
+    for (const day of folder.dates) day.images = without(day.images);
+    folder.dates = folder.dates.filter((day) => day.images.length > 0);
+    folder.image_count = folder.dates.reduce((total, day) => total + day.images.length, 0);
+  }
+  state.folderTree = state.folderTree.filter((folder) => folder.image_count > 0);
+
+  if (state.view === "folders") {
+    // The folder or date we were looking at may have just emptied out.
+    const folder = state.folderTree.find((f) => f.name === state.openFolderName);
+    if (!folder) {
+      state.openFolderName = null;
+      state.openFolderDate = null;
+    } else if (state.openFolderDate && !folder.dates.some((d) => d.date === state.openFolderDate)) {
+      state.openFolderDate = null;
+    }
+    renderFolders();
+  } else {
+    renderGrid();
+    if (state.view === "chart") renderChartBanner();
+  }
 }
 
 function assignControls(image) {
@@ -236,6 +312,30 @@ function renderPatients() {
   }
 }
 
+/*
+ * The new-patient fields stay collapsed until they are asked for.
+ *
+ * Nearly every visit to this panel is someone looking up a patient who is
+ * already on the list; a permanently open four-field form pushes the search
+ * box and the list itself down the screen for the rare case instead of the
+ * common one.
+ */
+function toggleAddPatient(open) {
+  const form = el("add-patient");
+  const next = open === undefined ? form.hidden : open;
+
+  form.hidden = !next;
+  el("show-add-patient").setAttribute("aria-expanded", String(next));
+  el("show-add-patient").textContent = next ? "Close" : "Add patient";
+
+  if (next) {
+    form.querySelector("input").focus();
+  } else {
+    form.reset();
+    el("add-patient-error").hidden = true;
+  }
+}
+
 async function addPatient(event) {
   event.preventDefault();
   const form = el("add-patient");
@@ -253,9 +353,7 @@ async function addPatient(event) {
       }),
     });
     state.patients = await api("/api/patients");
-    form.reset();
-    form.hidden = true;
-    error.hidden = true;
+    toggleAddPatient(false);
     renderPatients();
     await openChart(patient);
   } catch (err) {
@@ -285,9 +383,28 @@ function phoneCaptureLink(patient) {
 
 /* ---------------- views ---------------- */
 
+/*
+ * Stop sits beside Start, in red, rather than up in the toolbar.
+ *
+ * Starting and stopping a capture session are the same decision made twice,
+ * and a clinician mid-shoot should not have to hunt across the panel for the
+ * second half of it. Red because ending a session is the one action here that
+ * silently changes where the next photograph lands.
+ */
+function endSessionButton() {
+  const button = document.createElement("button");
+  button.className = "btn btn-small btn-danger";
+  button.type = "button";
+  button.textContent = "End capture";
+  button.title = "Stop charting photos to this patient";
+  button.addEventListener("click", () => {
+    endSession().catch((error) => alert(`Could not end the session: ${error.message}`));
+  });
+  return button;
+}
+
 function renderSession() {
   const banner = el("session-banner");
-  const endButton = el("end-session");
   const live = state.view === "live";
   const chart = state.view === "chart";
   const folders = state.view === "folders";
@@ -317,10 +434,7 @@ function renderSession() {
 
   if (folders) el("capture-empty").hidden = true;
 
-  if (!live) {
-    endButton.hidden = true;
-    return;
-  }
+  if (!live) return;
 
   if (state.session) {
     banner.className = "session-banner live";
@@ -329,13 +443,15 @@ function renderSession() {
       ${timeOf({ captured_at: state.session.started_at })} &middot; every photo taken
       between now and Stop is charted to this patient, from whatever camera or
       phone is plugged into this PC.</span>`;
-    endButton.hidden = false;
+    const actions = document.createElement("div");
+    actions.className = "banner-actions";
+    actions.appendChild(endSessionButton());
+    banner.appendChild(actions);
   } else {
     banner.className = "session-banner idle";
     banner.innerHTML = `<strong>No capture session open.</strong>
       <span>Press Start capture on a patient, then take the photos. Nothing is
       taken off the camera while nobody is in the chair.</span>`;
-    endButton.hidden = true;
   }
 }
 
@@ -356,14 +472,22 @@ function renderChartBanner() {
     ? "Capturing now - photos taken until you press Stop appear here on their own."
     : "Press Start capture, take the photos, then press Stop.";
 
+  const actions = document.createElement("div");
+  actions.className = "banner-actions";
+
   const button = document.createElement("button");
   button.className = "btn btn-small";
   button.textContent = capturing ? "Capturing now" : "Start capture";
   button.disabled = Boolean(capturing);
   button.title = "Photos taken from now on are charted to this patient";
   button.addEventListener("click", () => startSession(patient));
-  banner.appendChild(button);
-  banner.appendChild(phoneCaptureLink(patient));
+  actions.appendChild(button);
+
+  // Stop lives next to Start, not in the toolbar - see endSessionButton().
+  if (capturing) actions.appendChild(endSessionButton());
+
+  actions.appendChild(phoneCaptureLink(patient));
+  banner.appendChild(actions);
 }
 
 function renderGrid() {
@@ -396,8 +520,23 @@ function renderUnassigned() {
   for (const image of state.unassigned) {
     grid.appendChild(tile(image, { assignable: true }));
   }
-  el("unassigned-count").textContent = String(state.unassigned.length);
+
+  // The badge is the whole signal now that the panel itself is folded away in
+  // the top bar, so it shows a count only when there is something to act on.
+  const badge = el("unassigned-count");
+  badge.textContent = String(state.unassigned.length);
+  badge.hidden = state.unassigned.length === 0;
+  el("inbox-toggle").classList.toggle("has-waiting", state.unassigned.length > 0);
   el("unassigned-empty").hidden = state.unassigned.length > 0;
+}
+
+/* ---------------- needs-assignment inbox ---------------- */
+
+function toggleInbox(open) {
+  const panel = el("inbox-panel");
+  const next = open === undefined ? panel.hidden : open;
+  panel.hidden = !next;
+  el("inbox-toggle").setAttribute("aria-expanded", String(next));
 }
 
 /* ---------------- folder browser ----------------
@@ -542,6 +681,27 @@ async function openFolders() {
   renderPatients();
 }
 
+/*
+ * Which operatory (treatment room) this screen belongs to.
+ *
+ * Not a choice any more. The bridge running on this PC is configured for
+ * exactly one room in `bridge/.env`, and stamps that operatory onto every
+ * photograph it uploads; the backend then maps operatory + time onto the open
+ * session to decide whose chart a photo lands in. A picker here could only
+ * ever disagree with that - and a screen watching OP-2 while the camera beside
+ * it uploads as OP-1 opens sessions nothing is ever charted to, quarantining a
+ * whole visit while looking perfectly healthy. Reading the room off the bridge
+ * makes that disagreement unrepresentable. It is not shown on this screen
+ * either - a single-room practice never needs to think about it, and the
+ * live banner already names the room of the session it is describing.
+ */
+function adoptOperatory(status) {
+  const reported = status && status.operatory;
+  if (!reported || reported === state.operatory) return false;
+  state.operatory = reported;
+  return true;
+}
+
 function renderBridge(status) {
   const dot = el("bridge-dot");
   const text = el("bridge-text");
@@ -637,10 +797,24 @@ async function startSession(patient) {
 
 async function endSession() {
   if (!state.session) return;
+  const wasFor = state.session.patient_id;
   await api(`/api/sessions/${state.session.id}/end`, { method: "POST" });
   state.session = null;
+
+  // Land on the record of whoever just got up from the chair, which puts their
+  // Start capture button back within reach. Ending a session and starting
+  // another one on the same patient is the ordinary way a visit goes - a
+  // forgotten shot, a second angle - and sending the clinician back to an empty
+  // live view to hunt for the same name again would be the wrong default.
+  const patient = state.patients.find((p) => p.id === wasFor);
+  if (patient) {
+    await openChart(patient);
+    return;
+  }
+
   renderSession();
   renderPatients();
+  if (state.view === "chart") renderChartBanner();
 }
 
 async function refreshUnassigned() {
@@ -661,11 +835,17 @@ async function refreshSession() {
 }
 
 async function refreshBridge() {
+  let status = null;
   try {
-    renderBridge(await api("/api/bridge/status"));
+    status = await api("/api/bridge/status");
   } catch {
-    renderBridge(null);
+    status = null;
   }
+  const moved = adoptOperatory(status);
+  renderBridge(status);
+  // The bridge has named a different room than the one we were watching, so
+  // the open session we are showing belongs to somebody else's chair.
+  if (moved) await refreshSession();
 }
 
 /* ---------------- live events ---------------- */
@@ -708,8 +888,16 @@ function connectEvents() {
         state.unassigned = state.unassigned.filter((image) => image.id !== data.id);
         renderUnassigned();
       }
+    } else if (type === "image.deleted") {
+      // Another tab (or another operatory) got rid of a capture; drop it here
+      // too rather than leaving a tile that 404s the moment it is opened.
+      forgetImage(data.id);
     } else if (type === "bridge.status") {
-      renderBridge({ online: true, ...data });
+      const status = { online: true, ...data };
+      if (adoptOperatory(status)) {
+        refreshSession().catch(() => {});
+      }
+      renderBridge(status);
     } else if (type === "session.opened" && data.operatory === state.operatory) {
       state.session = data;
       renderSession();
@@ -718,6 +906,7 @@ function connectEvents() {
       state.session = null;
       renderSession();
       renderPatients();
+      if (state.view === "chart") renderChartBanner();
     }
   };
 
@@ -729,7 +918,6 @@ function connectEvents() {
 
 async function boot() {
   el("patient-search").addEventListener("input", renderPatients);
-  el("end-session").addEventListener("click", endSession);
   el("back-to-live").addEventListener("click", backToLive);
   el("show-recent").addEventListener("click", () => {
     openRecent().catch((error) => alert(`Could not load recent captures: ${error.message}`));
@@ -738,32 +926,34 @@ async function boot() {
     openFolders().catch((error) => alert(`Could not load the photo folders: ${error.message}`));
   });
   el("add-patient").addEventListener("submit", addPatient);
-  el("show-add-patient").addEventListener("click", () => {
-    const form = el("add-patient");
-    form.hidden = !form.hidden;
-    if (!form.hidden) form.querySelector("input").focus();
+  el("show-add-patient").addEventListener("click", () => toggleAddPatient());
+  el("cancel-add-patient").addEventListener("click", () => toggleAddPatient(false));
+
+  el("inbox-toggle").addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleInbox();
   });
-  el("cancel-add-patient").addEventListener("click", () => {
-    el("add-patient").hidden = true;
-    el("add-patient-error").hidden = true;
-  });
+  el("inbox-close").addEventListener("click", () => toggleInbox(false));
+  // A notifications tray closes when you look somewhere else. Clicks inside it
+  // must not count - assigning a photo takes several of them.
+  el("inbox-panel").addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("click", () => toggleInbox(false));
 
   el("lightbox-close").addEventListener("click", () => (el("lightbox").hidden = true));
   el("lightbox").addEventListener("click", (event) => {
     if (event.target === el("lightbox")) el("lightbox").hidden = true;
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") el("lightbox").hidden = true;
+    if (event.key !== "Escape") return;
+    el("lightbox").hidden = true;
+    toggleInbox(false);
   });
-  el("operatory").addEventListener("change", async (event) => {
-    state.operatory = event.target.value;
-    await refreshSession();
-  });
-
   state.patients = await api("/api/patients");
+  // The bridge names the room before anything that depends on it is asked for:
+  // looking up the open session is keyed on the operatory.
+  await refreshBridge();
   await refreshSession();
   await refreshUnassigned();
-  await refreshBridge();
   connectEvents();
 
   // The heartbeat drives the badge over SSE; this poll is the safety net for a

@@ -22,6 +22,15 @@ from ..window import CaptureWindow
 Emit = Callable[[CapturedImage], None]
 
 
+class _Keep:
+    """Sentinel: 'this argument was not supplied', as distinct from None."""
+
+    __slots__ = ()
+
+
+KEEP = _Keep()
+
+
 class CaptureSource(ABC):
     """A single way of getting images off a camera."""
 
@@ -62,11 +71,23 @@ class CaptureSource(ABC):
     # -- status ------------------------------------------------------------
 
     def note(self, detail: str, available: bool | None = None,
-             device: str | None = None) -> None:
+             device: str | None | _Keep = KEEP) -> None:
+        """Update what the tray and the chair-side UI say about this source.
+
+        `device` distinguishes three things, which is why it cannot just default
+        to None: omit it to leave the current device name alone, pass a name to
+        set it, or pass None to say there is no device attached any more.
+
+        That last case used to be unreachable - None was both "no argument" and
+        "clear it", so `note("no camera connected", device=None)` kept whatever
+        was last plugged in. The status bar then read "Camera ready - <phone>"
+        with nothing connected at all, which is precisely the claim a clinician
+        must be able to trust before they start shooting.
+        """
         self._detail = detail
         if available is not None:
             self._available = available
-        if device is not None:
+        if not isinstance(device, _Keep):
             self._device = device
 
     def count_capture(self) -> None:

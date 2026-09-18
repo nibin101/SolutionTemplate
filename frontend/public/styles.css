@@ -1,36 +1,78 @@
-:root {
-  color-scheme: light dark;
-  --bg: #f4f6f8;
-  --panel: #ffffff;
-  --ink: #16202a;
-  --muted: #61707e;
-  --line: #dfe5ea;
-  --accent: #0f7b6c;
-  --accent-soft: #e6f3f0;
-  --warn: #b06a10;
-  --warn-soft: #fdf1dd;
-  --danger: #c0392b;
-  --radius: 12px;
-  --shadow: 0 1px 2px rgba(16, 32, 42, 0.06), 0 8px 24px rgba(16, 32, 42, 0.06);
-}
+/* ---------------------------------------------------------------------------
+   Palette - deep navy clinic theme.
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #11161b;
-    --panel: #181f26;
-    --ink: #e8eef3;
-    --muted: #9aa8b4;
-    --line: #27313a;
-    --accent: #3ec4ab;
-    --accent-soft: #14312c;
-    --warn: #e0a54a;
-    --warn-soft: #342913;
-    --shadow: none;
-  }
+   One fixed theme rather than a light/dark pair, and that is a clinical
+   decision as much as a visual one: this screen is a surround for clinical
+   photographs, and a surround that flips between white and near-black changes
+   how the colour and contrast of a photograph read. Every serious image tool
+   (Lightroom, Capture One) pins a neutral dark surround for exactly that
+   reason. A clinician judging whether a shot is good enough to keep should get
+   the same answer at 9am and at 6pm.
+
+   Deliberately no web font. This UI is served to a clinic PC that may be
+   locked down or offline, and a blocked request to a font CDN would shift
+   every heading in the app. The reference's look comes from the uppercase,
+   wide-tracked headings, which system faces do perfectly well.
+   --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+
+  /* Canvas and surfaces */
+  --bg: #1e3149;          /* page - deep navy */
+  --panel: #24394f;       /* cards lifted off it */
+  --topbar: #182739;      /* the bar, deliberately darker than the canvas */
+  --line: #406489;        /* borders, visible but never loud */
+
+  /* Type */
+  --ink: #eef2f7;
+  --muted: #9cb0c6;
+
+  /* Steel blue carries every primary action. Picked as the darkest step of the
+     reference's blue that still clears 4.5:1 against a white button label -
+     the reference's own lighter blue lands at 4.37:1, which fails. */
+  --accent: #5178a0;
+  /* Accent as *text* needs to clear 4.5:1 on --panel, which the button blue
+     does not - so text gets its own lighter step rather than a washed-out
+     link nobody can read. */
+  --accent-text: #93b7d8;
+  --accent-soft: #2b4664;
+
+  --warn: #e0a54a;
+  /* Amber carried a short way into the card colour rather than a brown of its
+     own. A true amber-dark (#3a2f16) turns olive against navy and reads as
+     dirt, not caution; the warning is carried by the amber border and heading
+     sitting on this, which is why it can stay this quiet. Any stronger and
+     both the muted text and the amber itself drop under 4.5:1 on it. */
+  --warn-soft: #33424f;
+
+  /* Red splits the same way the accent does, and for the same reason: one red
+     cannot be both a readable label on a dark card and a filled button under
+     white text. `--danger` is the text step, `--danger-solid` the fill. A
+     single mid red fails both ways round - 3.2:1 as text, 3.7:1 as a fill. */
+  --danger: #ea837a;
+  --danger-solid: #dc3728;
+
+  /* The bed a photograph sits on stays neutral, not navy. Everything else
+     here can be tinted; the few pixels touching a clinical image cannot,
+     because a blue surround shifts how gum and tooth colour read. */
+  --photo-bed: #0e1319;
+
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(6, 14, 24, 0.3), 0 10px 28px rgba(6, 14, 24, 0.28);
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* The `hidden` attribute is how this UI hides everything - the chart banner,
+   the folder list, the capture grid, the add-patient form. It only sets
+   `display: none` at user-agent specificity, so any class rule here that sets
+   a display (`.session-banner { display: flex }`, `.grid { display: grid }`)
+   quietly beats it and leaves an empty box on screen. This makes it win. */
+[hidden] {
+  display: none !important;
 }
 
 body {
@@ -49,7 +91,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 14px 24px;
-  background: var(--panel);
+  background: var(--topbar);
   border-bottom: 1px solid var(--line);
 }
 
@@ -61,8 +103,10 @@ body {
 
 .brand h1 {
   margin: 0;
-  font-size: 19px;
-  letter-spacing: -0.2px;
+  font-size: 17px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
 .brand p {
@@ -71,12 +115,14 @@ body {
   color: var(--muted);
 }
 
+/* A ring, not a dot: the inner cut has to be the colour of what it sits on,
+   which is the bar rather than a card. */
 .brand-mark {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--accent);
-  box-shadow: inset 0 0 0 7px var(--panel), inset 0 0 0 9px var(--accent);
+  background: var(--accent-text);
+  box-shadow: inset 0 0 0 7px var(--topbar), inset 0 0 0 9px var(--accent-text);
 }
 
 .topbar-right {
@@ -85,14 +131,121 @@ body {
   gap: 18px;
 }
 
-.operatory {
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- needs-assignment inbox ---------- */
+/* Folded into the top bar as a tray rather than holding a third of the screen
+   open all day: most of the time there is nothing waiting, and when there is,
+   the badge says so from anywhere in the app. */
+
+.inbox {
+  position: relative;
+}
+
+.inbox-button {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
   color: var(--muted);
+  cursor: pointer;
+}
+
+.inbox-button:hover,
+.inbox-button[aria-expanded="true"] {
+  color: var(--ink);
+  background: var(--bg);
+}
+
+/* Something is actually waiting - the icon stops being furniture. */
+.inbox-button.has-waiting {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.inbox-icon {
+  width: 21px;
+  height: 21px;
+}
+
+.inbox-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--danger-solid);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+.inbox-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 30;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+  padding: 14px 16px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  /* Deeper than a light theme needs: a 0.18 shadow over navy is invisible, and
+     this tray has to read as floating above the page rather than cut into it. */
+  box-shadow: 0 14px 40px rgba(4, 10, 18, 0.55);
+}
+
+.inbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.inbox-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.inbox-close {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.inbox-close:hover {
+  color: var(--ink);
 }
 
 select,
@@ -112,7 +265,7 @@ input[type="search"] {
   gap: 8px;
   padding: 7px 12px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 8px;
   font-size: 13px;
 }
 
@@ -140,7 +293,7 @@ input[type="search"] {
 
 main {
   display: grid;
-  grid-template-columns: 290px minmax(0, 1fr) 320px;
+  grid-template-columns: 290px minmax(0, 1fr);
   gap: 18px;
   padding: 18px 24px 40px;
   align-items: start;
@@ -154,6 +307,23 @@ main {
   padding: 16px;
 }
 
+/* The reference separates its cards from the canvas with a light top edge
+   rather than a drop shadow - on a dark canvas a shadow has nothing to fall
+   on, so it reads as mud. */
+.panel::before {
+  content: "";
+  display: block;
+  height: 1px;
+  margin: -16px -16px 16px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(147, 183, 216, 0.22),
+    transparent
+  );
+}
+
 .panel-head {
   display: flex;
   align-items: center;
@@ -162,11 +332,16 @@ main {
   margin-bottom: 12px;
 }
 
+/* The reference's section headings - SERVICES, OUR CLINIC - are uppercase,
+   widely tracked and light rather than bold. The panel headings were already
+   uppercase; opening up the tracking and dropping the weight is what actually
+   carries that look, and it costs no web font. */
 .panel-head h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.14em;
   color: var(--muted);
 }
 
@@ -234,6 +409,8 @@ main {
 
 /* ---------- add patient ---------- */
 
+/* Collapsed away entirely until Add patient is pressed - `hidden` on the form
+   is what does that, this only styles the opened state. */
 .add-patient {
   display: grid;
   gap: 7px;
@@ -242,6 +419,29 @@ main {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--bg);
+  animation: unfold 160ms ease-out;
+}
+
+@keyframes unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .add-patient {
+    animation: none;
+  }
+}
+
+.field-label {
+  display: grid;
+  gap: 3px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
 }
 
 .add-patient input {
@@ -325,13 +525,19 @@ main {
   background: var(--bg);
 }
 
-.session-banner.chart .btn {
-  margin-top: 8px;
+/* Start and Stop sit together here, so the banner keeps a single action row
+   rather than letting the buttons stack. */
+.banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .chart-status {
   font-size: 12.5px;
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
 }
 
 .chart-status.error {
@@ -359,11 +565,55 @@ main {
 }
 
 .tile {
+  position: relative;
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
   background: var(--bg);
   animation: pop 320ms ease-out;
+}
+
+/* Sits over the top-right corner of the photograph itself. Faint until the
+   tile is hovered: deleting a clinical photograph should be available, not
+   inviting. Always solid on touch, where there is no hover to reveal it. */
+.tile-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(12, 16, 19, 0.55);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.tile:hover .tile-delete,
+.tile-delete:focus-visible {
+  opacity: 1;
+}
+
+.tile-delete:hover {
+  /* Carries the white glyph, so it takes the fill step, not the text one. */
+  background: var(--danger-solid);
+}
+
+.tile-delete:disabled {
+  opacity: 0.4;
+  cursor: progress;
+}
+
+@media (hover: none) {
+  .tile-delete {
+    opacity: 1;
+  }
 }
 
 @keyframes pop {
@@ -385,7 +635,7 @@ main {
   aspect-ratio: 3 / 2;
   object-fit: cover;
   cursor: zoom-in;
-  background: #0c1013;
+  background: var(--photo-bed);
 }
 
 /* Shown instead of an <img> when the capture cannot be previewed in a browser
@@ -399,7 +649,7 @@ main {
   gap: 4px;
   width: 100%;
   aspect-ratio: 3 / 2;
-  background: #0c1013;
+  background: var(--photo-bed);
   border-bottom: 1px solid var(--line);
 }
 
@@ -489,7 +739,7 @@ main {
 }
 
 .assign-message.ok {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .assign-message.warn {
@@ -525,6 +775,14 @@ main {
   background: transparent;
   color: var(--ink);
   border-color: var(--line);
+}
+
+/* Ending a capture session silently changes where the next photograph lands,
+   which is the one thing on this screen worth a red button. */
+.btn-danger {
+  background: var(--danger-solid);
+  border-color: var(--danger-solid);
+  color: #fff;
 }
 
 .btn:hover {
@@ -600,7 +858,7 @@ main {
 }
 
 .folder-breadcrumb a {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: none;
 }
 
@@ -638,7 +896,7 @@ main {
   height: 48px;
   border-radius: 8px;
   overflow: hidden;
-  background: #0c1013;
+  background: var(--photo-bed);
 }
 
 .folder-thumb img {

@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from ..db import audit, session as db_session
 from ..events import broker
 from ..schemas import AssignIn
 from ..serializers import image_to_dict
 from ..storage import UNASSIGNED_FOLDER, date_folder, folder_for, move_image, patient_folder
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 
@@ -140,6 +143,56 @@ def image_preview(image_id: str):
     if not path.exists():
         raise HTTPException(410, "Image file is no longer on disk")
     return FileResponse(path, media_type=row["mime"])
+
+
+@router.delete("/{image_id}", status_code=204)
+def delete_image(image_id: str):
+    """Remove a capture entirely - the row, the photograph, and its derivatives.
+
+    A camera fires off blurred frames, lens caps and accidental shots, and a
+    clinician who cannot get rid of one ends up with a chart nobody trusts. The
+    database row goes first: once it is gone the capture is off every chart and
+    every grid, which is the part that has to be reliable. The files are best
+    effort after that - a photograph left on disk when its row has gone is
+    stray clutter, but a row pointing at a file we already deleted would break
+    every view that tries to show it.
+
+    Derivatives are content-addressed by the file's own hash and `content_hash`
+    is unique in the database, so no surviving capture can be sharing them.
+    """
+    with db_session() as conn:
+        row = _load(conn, image_id)
+        paths = [Path(row["stored_path"])]
+        for column in ("thumb_path", "preview_path"):
+            value = row[column] if column in row.keys() else None
+            if value:
+                paths.append(Path(value))
+        data = image_to_dict(row)
+
+        conn.execute("DELETE FROM images WHERE id=?", (image_id,))
+        audit(
+            conn,
+            actor="ui",
+            action="image.delete",
+            subject=image_id,
+            detail=f"patient={row['patient_id'] or 'unassigned'} file={row['filename']}",
+        )
+
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:  # locked by a virus scanner, on a dead share
+            log.warning("deleted image %s but could not remove %s: %s", image_id, path, exc)
+
+    # Leave the tree tidy, exactly as a move does: an emptied day folder is
+    # noise in a file listing.
+    try:
+        paths[0].parent.rmdir()
+    except OSError:
+        pass
+
+    broker.publish("image.deleted", data)
+    return Response(status_code=204)
 
 
 @router.post("/{image_id}/assign")

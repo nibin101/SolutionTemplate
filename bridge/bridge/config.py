@@ -23,6 +23,22 @@ def _csv(name: str, default: str) -> list[str]:
     return [part.strip() for part in os.getenv(name, default).split(",") if part.strip()]
 
 
+def _port_range(value: str) -> tuple[int, int]:
+    """Parse "50000-50100" into an inclusive (low, high) pair.
+
+    A malformed value falls back to the default rather than stopping the bridge:
+    a typo here must not take the whole capture service down with it.
+    """
+    try:
+        low, _, high = value.strip().partition("-")
+        first, last = int(low), int(high or low)
+        if 1024 <= first <= last <= 65535:
+            return first, last
+    except ValueError:
+        pass
+    return 50000, 50100
+
+
 def _normalise_extension(value: str) -> str:
     value = value.lower().strip()
     return value if value.startswith(".") else f".{value}"
@@ -70,6 +86,23 @@ class Config:
     )
     simulator_interval: float = field(
         default_factory=lambda: float(os.getenv("SIMULATOR_INTERVAL_SECONDS", "6"))
+    )
+
+    # Wi-Fi cameras push straight to the bridge over FTP. 2121 rather than 21 so
+    # the bridge never needs administrator rights to bind its port; every body
+    # that speaks FTP lets you set the port alongside the address.
+    ftp_host: str = field(default_factory=lambda: os.getenv("FTP_HOST", "0.0.0.0").strip())
+    ftp_port: int = field(default_factory=lambda: int(os.getenv("FTP_PORT", "2121")))
+    ftp_user: str = field(default_factory=lambda: os.getenv("FTP_USER", "camera").strip())
+    #: No default on purpose - the source refuses to start without one.
+    ftp_password: str = field(default_factory=lambda: os.getenv("FTP_PASSWORD", "").strip())
+    ftp_root: Path = field(default_factory=lambda: _resolve(os.getenv("FTP_ROOT", "./ftp-incoming")))
+    #: Data-channel ports for passive mode, which is what cameras use. Pinned to
+    #: a small fixed range so the clinic firewall can be opened for exactly
+    #: these; left to the OS it would be a random ephemeral port per transfer,
+    #: and every transfer would stall at a closed port after connecting fine.
+    ftp_passive_ports: tuple[int, int] = field(
+        default_factory=lambda: _port_range(os.getenv("FTP_PASSIVE_PORTS", "50000-50100"))
     )
 
     canon_edsdk_dll: str = field(default_factory=lambda: os.getenv("CANON_EDSDK_DLL", "").strip())

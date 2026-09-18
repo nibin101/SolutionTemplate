@@ -35,16 +35,6 @@ body.phone {
   color: var(--danger);
 }
 
-.phone-op {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
 /* Target ------------------------------------------------------------- */
 
 .target {
@@ -173,7 +163,7 @@ body.phone {
   height: 54px;
   object-fit: cover;
   border-radius: 7px;
-  background: #0c1013;
+  background: var(--photo-bed);
   flex-shrink: 0;
 }
 

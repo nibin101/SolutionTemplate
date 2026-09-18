@@ -107,7 +107,20 @@ class Uploader(threading.Thread):
         body = _safe_json(response)
         status = body.get("status", "stored")
         if status == "rejected":
-            self.spool.mark_failed(item, f"rejected: {body.get('reason', 'unknown')}")
+            # A rejection is a *final answer*, not a failure to deliver. The
+            # frame reached the backend and the quality gate declined it - a
+            # blurred frame, a lens cap - which is the system working. Parking
+            # it in the failed bucket alongside dead networks and unreadable
+            # blobs was wrong twice over: the chair-side status bar showed a
+            # permanent red "N transfer(s) failed" for a photograph nothing
+            # will ever accept, and "Retry failed" would re-send it forever to
+            # be declined identically every time. Recording the disposition
+            # instead also means the dedupe table remembers the verdict, so the
+            # same bytes are never uploaded again.
+            reason = body.get("reason", "unknown")
+            log.warning("backend declined %s: %s", item.filename, reason)
+            self.last_error = None
+            self.spool.mark_sent(item, disposition=f"rejected: {reason}")
             return
 
         # "duplicate" means the backend already has these bytes - that is a
