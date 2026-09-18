@@ -51,69 +51,10 @@ them feeds the same spool, so mixing them is safe.
 | `wpd` | USB MTP/PTP through Windows Portable Devices | **Default for DSLRs.** One implementation covers Canon, Nikon and Sony with no vendor SDK. |
 | `shell` | USB MTP through the Windows Shell | A body that will not transfer over `wpd`. |
 | `folder` | Filesystem watch | Vendor tether software (EOS Utility, NX Tether, Imaging Edge) or camera Wi-Fi/FTP drop. |
-| `ftp` | Built-in FTP server | **Wi-Fi cameras.** Canon R / Nikon Z / Sony Alpha / Fujifilm push each frame straight to the bridge, no vendor software and nothing on the camera. |
 | `removable` | SD card / mass-storage | Clinician brings the card to a reader. Imports the last 12 hours of DCIM. |
 | `simulator` | Synthetic | Demo and tests with no hardware attached. |
 | `canon` | Canon EDSDK | You have EDSDK and want push-on-shutter instead of polling. |
 | `nikon` / `sony` | Vendor SDKs | Not implemented — see the module docstrings for why, and what they would add. |
-
-### Wi-Fi cameras (`ftp`)
-
-Every current body with wireless can FTP each frame as it is shot; it is the one
-wireless path Canon, Nikon, Sony and Fujifilm all agree on. Enabling `ftp` makes
-the bridge *be* that server, so nothing else has to be installed or kept running:
-
-```ini
-ENABLED_SOURCES=wpd,folder,removable,ftp
-FTP_PORT=2121
-FTP_USER=camera
-FTP_PASSWORD=<something long>
-FTP_PASSIVE_PORTS=50000-50100
-```
-
-Both devices must be on the **same local network** - the same router, by Wi-Fi
-or cable. "Both online" is not enough: a camera on a phone hotspot and a PC on
-the practice Wi-Fi can both reach the internet and still have no route to each
-other. Guest and "client isolation" networks block device-to-device traffic by
-design, so put the camera on the normal network, not the guest SSID.
-
-Open the firewall once, on the practice PC, in an Administrator PowerShell:
-
-```powershell
-New-NetFirewallRule -DisplayName "SnapChart FTP control" -Direction Inbound `
-  -Protocol TCP -LocalPort 2121 -Action Allow -Profile Private
-New-NetFirewallRule -DisplayName "SnapChart FTP data" -Direction Inbound `
-  -Protocol TCP -LocalPort 50000-50100 -Action Allow -Profile Private
-```
-
-Two rules, not one, because FTP uses two connections: the camera opens the
-control channel to `FTP_PORT`, then the *data* for each photo crosses a second
-connection on a port from `FTP_PASSIVE_PORTS`. Opening only the first is the
-classic failure - the camera reports a successful login and every transfer then
-times out. `-Profile Private` keeps it off any public network the laptop joins
-later; make sure the practice Wi-Fi is set to Private in Windows.
-
-Then in the camera's network menu, point FTP transfer at this PC's LAN address
-(`ipconfig` → IPv4 Address) and that port, with those credentials. Use passive
-mode if the camera offers the choice. Frames arrive in about a second and go
-through the same dedupe, spool, retry and charting pipeline as a USB capture.
-
-Quick check from any other machine on the network, before involving the camera:
-
-```powershell
-Test-NetConnection <pc-ip> -Port 2121    # TcpTestSucceeded : True
-```
-
-Port 2121 rather than 21 so the bridge never needs administrator rights; every
-body that speaks FTP lets you set the port next to the address. The source
-refuses to start without a password - an anonymous drop box on a practice
-network is not acceptable - and the landing directory is drained as fast as
-files arrive, so the bridge never becomes a second unmanaged pile of patient
-photographs.
-
-Preferred over pointing `folder` at an SMB share: a folder watcher has to guess
-when a file is finished, while FTP is *told* by the protocol, so a photo can
-never be read half-written.
 
 ### Why MTP/PTP is the primary path
 

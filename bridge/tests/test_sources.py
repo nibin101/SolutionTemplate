@@ -174,78 +174,9 @@ def test_the_floor_still_protects_against_hammering():
     assert MIN_POLL_SECONDS > 0
 
 
-def test_a_device_raising_events_is_not_polled_hard():
-    """Events deliver the photo; the poll is only insurance.
-
-    Walking a phone's tree twice a second cost 53% of a core for nothing.
-    """
-    from bridge.sources.wpd_ptp import (
-        EVENT_BACKSTOP_SECONDS,
-        WpdPtpSource,
-        _OpenDevice,
-    )
-
-    source = WpdPtpSource()
-    source._devices = {
-        "usb-phone": _OpenDevice(device=None, content=None, properties=None,
-                                  name="Phone", cookie=123)
-    }
-    source._events_seen = 4  # observed, not merely subscribed
-    assert source._quiet_period(0.5) == EVENT_BACKSTOP_SECONDS
 
 
-def test_a_subscription_alone_does_not_earn_the_slow_backstop():
-    """Accepting a subscription is not the same as honouring it.
 
-    A phone accepted Advise() and then raised nothing. Trusting the cookie
-    dropped the poll to a 20s backstop, and a photograph taken at 21:17:17
-    reached the chart at 21:17:31 - slower than before the change. The fast
-    path has to be earned by an event actually arriving.
-    """
-    from bridge.sources.wpd_ptp import WpdPtpSource, _OpenDevice
-
-    source = WpdPtpSource()
-    source._devices = {
-        "usb-phone": _OpenDevice(device=None, content=None, properties=None,
-                                  name="Phone", cookie=123)
-    }
-    source._events_seen = 0
-    assert source._quiet_period(0.5) == 0.5
-
-
-def test_a_silent_device_keeps_the_configured_interval():
-    """Nothing announces itself, so it has to be asked at the chosen rate."""
-    from bridge.sources.wpd_ptp import WpdPtpSource, _OpenDevice
-
-    source = WpdPtpSource()
-    source._devices = {
-        "usb\body": _OpenDevice(device=None, content=None, properties=None,
-                                 name="Body", cookie=None)
-    }
-    assert source._quiet_period(0.5) == 0.5
-
-
-def test_one_silent_device_pulls_the_whole_loop_back():
-    """A mixed bench must not let the quiet body wait on the chatty phone."""
-    from bridge.sources.wpd_ptp import WpdPtpSource, _OpenDevice
-
-    source = WpdPtpSource()
-    source._devices = {
-        "usb-phone": _OpenDevice(device=None, content=None, properties=None,
-                                  name="Phone", cookie=1),
-        "usb\body": _OpenDevice(device=None, content=None, properties=None,
-                                 name="Body", cookie=None),
-    }
-    assert source._quiet_period(0.5) == 0.5
-
-
-def test_no_device_means_the_configured_interval():
-    """With nothing attached the loop is just watching for an arrival."""
-    from bridge.sources.wpd_ptp import WpdPtpSource
-
-    source = WpdPtpSource()
-    source._devices = {}
-    assert source._quiet_period(0.5) == 0.5
 
 
 def test_camera_folders_are_recognised_before_anything_is_shot():
@@ -257,7 +188,7 @@ def test_camera_folders_are_recognised_before_anything_is_shot():
     """
     from bridge.sources.wpd_ptp import _looks_like_a_photo_folder as looks
 
-    for name in ("DCIM", "dcim", "Camera", "100CANON", "100NIKON", "100ANDRO"):
+    for name in ("Camera", "camera", "100CANON", "100NIKON", "100ANDRO"):
         assert looks(name), f"{name} should be watched"
 
 
@@ -267,3 +198,28 @@ def test_ordinary_phone_folders_are_not_watched():
 
     for name in ("WhatsApp", "Download", "Android", "Music", "Documents", ""):
         assert not looks(name), f"{name} should not be scanned every sweep"
+
+
+def test_dcim_itself_is_not_treated_as_a_photo_folder():
+    """DCIM holds folders, not photographs.
+
+    Seeding it meant the fast sweep enumerated DCIM every second, saw only its
+    sub-folders, and never looked inside DCIM/Camera - so a new shot was found
+    only by the periodic full walk, a ~10s average wait.
+    """
+    from bridge.sources.wpd_ptp import _looks_like_a_photo_folder as looks
+
+    assert not looks("DCIM")
+    assert not looks("dcim")
+
+
+def test_the_object_cap_clears_a_real_camera_roll():
+    """A truncated listing can drop the photograph just taken.
+
+    MTP promises no enumeration order, so if a folder exceeds the cap the shot
+    that falls off the end is never charted. The test phone sat exactly on the
+    old 5000 limit.
+    """
+    from bridge.sources.wpd_ptp import MAX_OBJECTS_PER_NODE
+
+    assert MAX_OBJECTS_PER_NODE > 5000
