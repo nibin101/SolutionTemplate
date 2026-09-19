@@ -144,7 +144,7 @@ Design decisions in full, including the trade-offs we rejected:
 | ----------------------------------------------------- | ------------------------------------ |
 | [Screenshot 1](./assets/screenshots/screenshot-1.png) | Chair-side view with a live capture session |
 | [Screenshot 2](./assets/screenshots/screenshot-2.png) | Tray icon and camera-link status     |
-| [Pitch Video](./assets/pitch/README.md)               | Link to your >30s social pitch video |
+| [Pitch Video](https://www.instagram.com/reel/Ddb2aaxyv3g/?stkn=aGRqdWNuZDRwbHZo)               | Link to your >30s social pitch video |
 
 ---
 
