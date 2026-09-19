@@ -10,7 +10,7 @@
 | **Team Name:**    | CJD                                                 |
 | **Team Members:** | Ajo Jose · Woitiwe Simson · Alan Joy · Nibin Thomas|
 | **Institution:**  | CET                                                 |
-| **Live Demo:**    | http://127.0.0.1:8000/                              |
+| **Live Demo:**    |                               |
 | **Pitch Video:**  |https://www.instagram.com/reel/Ddb2aaxyv3g/?stkn=aGRqdWNuZDRwbHZo                |
 
 ---
@@ -323,12 +323,12 @@ _This doubles as the live demo runbook (3–5 min)._
 
 ## Team
 
-| Name          | Role(s)                         | GitHub                              |
-| --------      | ------------------------------- | ---------                           |
-| Ajo Jose      | Front end developer             |  https://github.com/AjoJosee        | 
-| Alan Joy      | Back end developer              |  https://github.com/awaken-soul     | 
-|Nibin Thomas   | Full stack  developer           |  https://github.com/nibin101        | 
-| Woitwe Simson |  Programmer                     |  https://github.com/Gotamantium-Core| 
+| Name          | Role(s)                         | GitHub                              | Email
+| --------      | ------------------------------- | ---------                           | ---------
+| Ajo Jose      | Front end developer             |  https://github.com/AjoJosee        | ajojosee@gmail.com
+| Alan Joy      | Back end developer              |  https://github.com/awaken-soul     | alanjoy2006@gmail.com
+|Nibin Thomas   | Full stack  developer           |  https://github.com/nibin101        | tve24cs017@cet.ac.in
+| Woitwe Simson |  Programmer                     |  https://github.com/Gotamantium-Core| woitiwe@gmail.com
 
 ---
 
@@ -336,12 +336,12 @@ _This doubles as the live demo runbook (3–5 min)._
 
 **Before 6:00 AM (Code Freeze) – Sat, Sept 19th:**
 
-- [ ] Clean, runnable source code committed to this **public** repo
-- [ ] `README.md` fully filled in (all sections above)
-- [ ] Pitch video (>30s, English) posted on team member's social profile
+- [X] Clean, runnable source code committed to this **public** repo
+- [X] `README.md` fully filled in (all sections above)
+- [X] Pitch video (>30s, English) posted on team member's social profile
       tagging **@DrishtiCET** & **@CareStack** and link added above
-- [ ] All secrets/API keys removed from the repo
-- [ ] Quick-start verified from a fresh clone (`git clone` → run)
+- [X] All secrets/API keys removed from the repo
+- [X] Quick-start verified from a fresh clone (`git clone` → run)
 
 ---
 
