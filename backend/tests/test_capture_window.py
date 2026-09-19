@@ -142,3 +142,41 @@ def test_a_shot_taken_after_stop_is_held_for_review(client, auth, jpeg, patient)
         },
     ).json()
     assert body["image"]["status"] == "unassigned"
+
+
+def test_a_shot_seconds_after_stop_is_held_for_review(client, auth, jpeg, patient):
+    """The realistic case, and the one that was wrong.
+
+    The drift tolerance used to be applied to the *end* of the window as well
+    as the start, so every photograph taken in the 90 seconds after Stop was
+    charted to the patient who had just got up. The test above only covered a
+    shot half an hour late, which cleared the tolerance and passed throughout.
+
+    Five seconds is what it actually looks like in the chair: the clinician
+    presses Stop, then takes one more frame.
+    """
+    session = open_session(client, patient["id"])
+    client.post(f"/api/sessions/{session['id']}/end")
+
+    body = upload(
+        client, auth, jpeg,
+        (datetime.now(timezone.utc) + timedelta(seconds=5)).isoformat(),
+    )
+    assert body["image"]["status"] == "unassigned", (
+        "a photograph taken after Stop belongs in review, not on the chart of "
+        "the patient who has left"
+    )
+    assert body["image"]["patient_id"] is None
+
+
+def test_the_drift_tolerance_still_protects_the_start_of_a_session(client, auth, jpeg, patient):
+    """Tolerance is kept where it is safe: the patient is already in the chair.
+
+    A camera whose clock lags slightly must not lose the first frame of a
+    visit, so a shot timestamped just before Start is still charted.
+    """
+    open_session(client, patient["id"])
+
+    body = upload(client, auth, jpeg, ago(seconds=30))
+    assert body["image"]["patient_id"] == patient["id"]
+    assert body["image"]["status"] == "assigned"

@@ -52,7 +52,9 @@ def test_unusable_dates_return_none(raw):
 
 def window(since_minutes_ago: float) -> CaptureWindow:
     since = datetime.now(timezone.utc) - timedelta(minutes=since_minutes_ago)
-    window = CaptureWindow()
+    window = CaptureWindow(
+        watching_since=datetime.now(timezone.utc) - timedelta(hours=2)
+    )
     window.update({"since": since.replace(microsecond=0).isoformat(), "until": None})
     return window
 

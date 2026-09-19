@@ -11,13 +11,26 @@ never reaches the capture PC.
 
 Three verdicts rather than a boolean, because "no" means two different things:
 
-* SKIP - decided for good. Taken before this session started, or undated. A
-  window's start only ever moves forward, so nothing that fails that test will
-  ever pass it later; the file can be marked seen and never read again, which
-  is what keeps a phone holding ten thousand personal photos cheap to watch.
-* WAIT - taken after the window closed. That shot may well belong to the *next*
-  patient, so it is left alone, unmarked, to be judged against the next window.
-* TAKE - inside the window. Transfer it.
+* SKIP - decided for good. Undated, or taken before this bridge started
+  watching. The file is marked seen and never read again, which is what keeps
+  a phone holding ten thousand personal photos cheap to watch.
+* WAIT - taken moments ago but not yet claimed by a window. The clinician may
+  simply not have pressed Start yet, and the heartbeat may not have told us
+  about a session that is already open, so it is left unmarked and asked again.
+* TAKE - transfer it. Either it falls inside the window, in which case the
+  server charts it, or it does not, in which case the server quarantines it
+  into Needs assignment.
+
+What is *not* here any more is a verdict that means "drop it silently". A shot
+taken after Stop used to sit in WAIT for ever: never transferred, and dropped
+for good once the next session started, so it reached neither a chart nor the
+review queue. The chair-side panel promises "photos that arrived while no
+session was open", and nothing from the camera could ever appear in it.
+
+The rule is now: anything photographed after this bridge began watching is a
+deliberate clinical act and reaches the server, which decides whose it is. A
+photograph the server cannot place goes to review, where one click assigns it -
+which is the recoverable failure this system is built around.
 """
 
 from __future__ import annotations
@@ -64,10 +77,16 @@ class CaptureWindow:
     lock. It is deliberately tiny: two timestamps and one decision.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, watching_since: datetime | None = None) -> None:
         self._lock = threading.Lock()
         self._since: datetime | None = None
         self._until: datetime | None = None
+        #: When this bridge started watching. Everything already on the camera
+        #: at that moment is somebody's camera roll and is never read; anything
+        #: photographed afterwards is a deliberate act and reaches the server.
+        #: This is what lets an unclaimed shot go to review without the cost of
+        #: reconsidering ten thousand old files on every sweep.
+        self.watching_since = watching_since or datetime.now(timezone.utc)
 
     # -- state -------------------------------------------------------------
 
@@ -112,16 +131,26 @@ class CaptureWindow:
         if moment is None:
             return SKIP
 
+        now = now or datetime.now(timezone.utc)
+
+        # Already on the camera before this bridge started: somebody's camera
+        # roll, and the one case that must stay cheap to dismiss.
+        if moment < self.watching_since:
+            return SKIP
+
         if since is None:
-            # As far as we know nobody is in the chair. For an old photograph
-            # that settles it - this is somebody's camera roll. For one taken
-            # moments ago it does not: the session may have opened since the
-            # last heartbeat, so hold it and ask again.
-            now = now or datetime.now(timezone.utc)
-            return WAIT if now - moment <= STALE_AFTER else SKIP
+            # Nobody in the chair as far as we have been told. A shot from
+            # moments ago may simply predate the next heartbeat, so hold it;
+            # once it is older than that, send it for review rather than
+            # letting it fall through the floor.
+            return WAIT if now - moment <= STALE_AFTER else TAKE
 
         if moment < since - CLOCK_SKEW:
-            return SKIP
+            # Taken before this patient sat down. Not theirs - but it happened
+            # while we were watching, so it belongs in review, not nowhere.
+            return TAKE
         if until is not None and moment > until + CLOCK_SKEW:
-            return WAIT
+            # After Stop. Give the next session a moment to claim it, then let
+            # the server quarantine it.
+            return WAIT if now - moment <= STALE_AFTER else TAKE
         return TAKE

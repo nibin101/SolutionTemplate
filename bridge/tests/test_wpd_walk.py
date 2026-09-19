@@ -84,7 +84,11 @@ class FakeSource(WpdPtpSource):
 def source() -> FakeSource:
     """A session that ran from ten minutes ago until two minutes ago."""
     made = FakeSource()
-    made.window = CaptureWindow()
+    # Watching since well before the session: anything already on the camera
+    # when the bridge started is the camera roll and is never read.
+    made.window = CaptureWindow(
+        watching_since=datetime.now(timezone.utc) - timedelta(hours=2)
+    )
     made.window.update({"since": iso(SESSION_START), "until": ago(minutes=2)})
     return made
 
@@ -99,11 +103,23 @@ def walk(source: FakeSource) -> list:
     return emitted
 
 
-def test_only_the_photograph_taken_during_the_session_comes_across(source):
-    emitted = walk(source)
+def test_the_owners_camera_roll_stays_on_the_device(source):
+    """The one thing the bridge decides by itself: what never leaves the camera.
 
-    assert [image.filename for image in emitted] == ["IMG_0042.JPG"]
-    assert source.transfers == ["in_session"], "nothing else may be read off the device"
+    Anything already on the device when the bridge started watching is the
+    owner's own life and is never read. Everything photographed *since* is a
+    deliberate act and goes to the server, which decides whether it belongs on
+    a chart or in Needs assignment - the bridge no longer makes that call, and
+    no longer drops a photograph on its own.
+    """
+    emitted = walk(source)
+    names = [image.filename for image in emitted]
+
+    assert "IMG_0042.JPG" in names, "the shot taken during the session"
+    assert "IMG_0041.JPG" in names, "taken while watching but unclaimed - for review"
+    assert "BEACH.JPG" not in names, "200 days old: the owner's own photograph"
+    assert "IMG_0044.JPG" not in names, "undated, so unprovable"
+    assert "holiday" not in source.transfers, "it must not even be read off the device"
 
 
 def test_the_owners_own_photographs_are_never_read(source):

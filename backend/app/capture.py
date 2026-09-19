@@ -21,8 +21,21 @@ from .quality import assess_image
 from .serializers import image_to_dict
 from .storage import folder_for, sha256_hex, store_image
 
-# Matches the bridge's own tolerance: camera clocks drift, so a shot seconds
-# outside the session window is still this patient's.
+# Camera clocks drift, so a shot seconds outside the session window can still
+# be this patient's. Applied to the *start* of a window only, never the end.
+#
+# Pressing Stop is an explicit statement that this patient's visit is over, and
+# extending the window past it meant every photograph taken in the next 90
+# seconds was charted to someone who had already left the chair - the exact
+# failure quarantine exists to prevent. Tolerance at the start is a different
+# proposition: the patient is already in the chair, and a shot framed moments
+# before the clinician pressed Start is plausibly theirs.
+#
+# No timestamp can distinguish "the camera's clock runs fast" from "this was
+# taken after the patient left", so one of the two errors has to be chosen.
+# This system's whole premise is that a missing photograph is recoverable in
+# one click from Needs assignment, and a photograph on the wrong chart is a
+# clinical incident.
 CLOCK_SKEW = timedelta(seconds=90)
 
 # How long after a session closes we still accept a late arrival that falls
@@ -80,7 +93,10 @@ def resolve_session(conn: sqlite3.Connection, operatory: str,
     if started is None or ended is None:
         return None
 
-    if started - CLOCK_SKEW <= reference <= ended + CLOCK_SKEW:
+    # Note the asymmetry: tolerance at the start, none at the end. See
+    # CLOCK_SKEW - a photograph timestamped after Stop belongs to review, not
+    # to the patient who has just got up.
+    if started - CLOCK_SKEW <= reference <= ended:
         return recent
 
     # Outside the window entirely. Attaching it now would be a guess, which is

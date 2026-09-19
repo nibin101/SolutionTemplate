@@ -25,12 +25,20 @@ def iso(moment: datetime) -> str:
 
 START = at(minutes=-20)
 END = at(minutes=-10)
+#: These sessions are in the past, so the bridge has to have been watching
+#: before them - anything predating the watch is treated as the camera roll.
+WATCHING_SINCE = at(hours=-2)
+
+
+def watching() -> CaptureWindow:
+    """A window belonging to a bridge that has been running for two hours."""
+    return CaptureWindow(watching_since=WATCHING_SINCE)
 
 
 @pytest.fixture()
 def closed() -> CaptureWindow:
     """A session that ran from 20 to 10 minutes ago."""
-    window = CaptureWindow()
+    window = watching()
     window.update({"since": iso(START), "until": iso(END)})
     return window
 
@@ -38,7 +46,7 @@ def closed() -> CaptureWindow:
 @pytest.fixture()
 def live() -> CaptureWindow:
     """A session opened 20 minutes ago and still running."""
-    window = CaptureWindow()
+    window = watching()
     window.update({"since": iso(START), "until": None})
     return window
 
@@ -50,9 +58,15 @@ def test_a_shot_taken_during_the_session_is_transferred(closed):
     assert closed.verdict(iso(at(minutes=-15))) == TAKE
 
 
-def test_a_shot_taken_before_the_session_is_never_transferred(closed):
-    """This is the previous patient's photograph, or nobody's."""
-    assert closed.verdict(iso(at(minutes=-40))) == SKIP
+def test_a_shot_taken_before_the_session_goes_to_review(closed):
+    """Not this patient's - but it happened while the bridge was watching.
+
+    The bridge no longer decides that such a shot is nobody's and drops it.
+    It is transferred, and the server refuses to chart it, so it lands in
+    Needs assignment where a clinician can place it in one click. Silently
+    discarding it here is how a photograph disappears entirely.
+    """
+    assert closed.verdict(iso(at(minutes=-40))) == TAKE
 
 
 def test_the_session_boundaries_are_inclusive(closed):
@@ -62,7 +76,9 @@ def test_the_session_boundaries_are_inclusive(closed):
 
 def test_an_open_session_has_no_end(live):
     assert live.verdict(iso(at(minutes=-1))) == TAKE
-    assert live.verdict(iso(at(minutes=-40))) == SKIP
+    # Before this patient sat down: transferred, but for review, not for
+    # this chart - the server makes that call.
+    assert live.verdict(iso(at(minutes=-40))) == TAKE
 
 
 # -- the three verdicts are three different things -------------------------
@@ -74,15 +90,25 @@ def test_a_shot_after_the_session_is_held_not_discarded(closed):
     Discarding it here is how the first photograph of the next appointment goes
     missing: the file would be marked seen and never looked at again.
     """
-    assert closed.verdict(iso(at(minutes=-2))) == WAIT
+    assert closed.verdict(iso(at(seconds=-20))) == WAIT
 
 
 def test_a_held_shot_is_taken_once_the_next_session_claims_it(closed):
-    moment = iso(at(minutes=-2))
+    moment = iso(at(seconds=-20))
     assert closed.verdict(moment) == WAIT
 
     closed.update({"since": iso(at(minutes=-3)), "until": None})
     assert closed.verdict(moment) == TAKE
+
+
+def test_a_held_shot_is_not_held_for_ever(closed):
+    """The hold is a pause for the next session, not a place to lose things.
+
+    Held indefinitely, a shot taken after Stop reached neither a chart nor the
+    review queue - it simply never left the camera.
+    """
+    stale = at(seconds=-int(STALE_AFTER.total_seconds()) - 30)
+    assert closed.verdict(iso(stale)) == TAKE
 
 
 def test_an_undated_photograph_is_never_transferred(live):
@@ -96,7 +122,18 @@ def test_an_undated_photograph_is_never_transferred(live):
 
 def test_an_old_photograph_is_ignored_when_no_session_is_open():
     """A phone's camera roll. Plugging it in must import none of it."""
-    assert CaptureWindow().verdict(iso(at(hours=-30))) == SKIP
+    assert watching().verdict(iso(at(hours=-30))) == SKIP
+
+
+def test_anything_already_on_the_camera_is_left_alone():
+    """The guard that keeps a ten-thousand-photo phone cheap to watch.
+
+    Everything predating the bridge is dismissed once and never reconsidered,
+    which is what allows an unclaimed *new* shot to be sent for review without
+    dragging the whole camera roll with it.
+    """
+    window = CaptureWindow(watching_since=at(minutes=-1))
+    assert window.verdict(iso(at(minutes=-5))) == SKIP
 
 
 def test_a_photograph_just_taken_is_held_when_no_session_is_open():
@@ -105,12 +142,18 @@ def test_a_photograph_just_taken_is_held_when_no_session_is_open():
     A clinician who presses Start and immediately shoots must not lose that
     frame just because the bridge has not been told yet.
     """
-    assert CaptureWindow().verdict(iso(at(seconds=-5))) == WAIT
+    assert watching().verdict(iso(at(seconds=-5))) == WAIT
 
 
-def test_the_hold_expires_so_stray_shots_do_not_queue_up_forever():
+def test_an_unclaimed_shot_is_sent_for_review_rather_than_dropped():
+    """Nobody pressed Start, but the photograph was still taken deliberately.
+
+    This used to be SKIP - silently discarded - so a shot taken with no session
+    open reached neither a chart nor the review queue, while the chair-side
+    panel advertised "photos that arrived while no session was open".
+    """
     stale = at(seconds=-int(STALE_AFTER.total_seconds()) - 30)
-    assert CaptureWindow().verdict(iso(stale)) == SKIP
+    assert watching().verdict(iso(stale)) == TAKE
 
 
 # -- clock drift -----------------------------------------------------------
@@ -123,7 +166,14 @@ def test_a_small_clock_drift_does_not_lose_an_honest_shot(closed):
 
 
 def test_drift_tolerance_cannot_reach_the_next_appointment(closed):
-    assert closed.verdict(iso(START - timedelta(minutes=10))) == SKIP
+    """Ten minutes out is far past any clock drift.
+
+    It is still transferred - everything photographed while watching is - but
+    it is well outside the window, so the server quarantines it rather than
+    charting it to this patient. That boundary is asserted in the backend's
+    own capture-window tests.
+    """
+    assert closed.verdict(iso(START - timedelta(minutes=10))) == TAKE
     assert closed.verdict(iso(END + timedelta(minutes=10))) == WAIT
 
 
